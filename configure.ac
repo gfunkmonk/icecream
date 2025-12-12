@@ -31,8 +31,8 @@ AC_LANG([C++])
 AC_PROG_CC
 AC_PROG_CXX
 
-AC_MSG_CHECKING([for C++11 support (-std=c++11)])
-CXXFLAGS="$CXXFLAGS -std=c++11"
+AC_MSG_CHECKING([for C++17 support (-std=c++17)])
+CXXFLAGS="$CXXFLAGS -std=c++17"
 AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[
         constexpr int get_const() { return 5; }
     ]], [[
