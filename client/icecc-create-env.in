@@ -23,7 +23,7 @@ usage ()
     echo "For GCC, pass the the gcc binary, the matching g++ will be used automatically."
     echo "For Clang, pass the clang binary."
     echo "Use --addfile <file> to add extra files."
-    echo "Use --compression <type> to set tarball type (none,gzip,bzip2,zstd,xz)."
+    echo "Use --compression <type> to set tarball type (none,gzip,bzip2,zstd,xz,pigz)."
     echo "For backwards compatibility, the following is also supported:"
     echo "$0 --gcc <gcc_path> <g++_path>"
     echo "$0 --clang <clang_path>"
@@ -428,7 +428,11 @@ while test -n "$1"; do
                     compress_args="-T0 -0"
                 fi
                 ;;
-            *)
+            pigz)
+                compress_ext=.gz
+                compress_program=pigz
+                ;;
+			*)
                 echo "Unknown compression type '$1'."
                 exit 1
                 ;;
