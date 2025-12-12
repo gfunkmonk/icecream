@@ -449,8 +449,8 @@ int analyse_argv(const char * const *argv, CompileJob &job, bool icerun, list<st
                        || !strcmp(a, "-fprofile-use")
                        || !strcmp(a, "-save-temps")
                        || !strcmp(a, "--save-temps")
-                       || str_startswith(a, "-save-temps=")
-                       || str_startswith(a, "--save-temps=")
+                       || str_startswith("-save-temps=", a)
+                       || str_startswith("--save-temps=", a)
                        || !strcmp(a, "-fbranch-probabilities")) {
                 log_warning() << "compiler will emit additional local files (argument " << a << "); building locally" << endl;
                 always_local = true;
