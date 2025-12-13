@@ -1,0 +1,2 @@
+# updaterc.d can be called a second time to disable it
+icecc: duplicate-updaterc.d-calls-in-postinst icecc-scheduler
