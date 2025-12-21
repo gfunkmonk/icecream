@@ -49,6 +49,10 @@ Options
     different than *root*. If not specified, the daemon defaults
     to the *icecc* system user if available, or *nobody* if not.
 
+*-a --algorithm* _algorithm_::
+    Specify the scheduler pick_server algorithm. Choices are:
+    RANDOM, ROUND_ROBIN, LEAST_BUSY, & FASTEST 
+
 *-v, -vv, -vvv*::
     Control verbosity of daemon. The more v the more verbose.
 
