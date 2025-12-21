@@ -64,7 +64,8 @@ string find_prefix(const string &basename)
 /*
  We support these compilers:
  - cc/c++
-    Only in this form, no prefix or suffix. It is usually a symlink to the real compiler
+    Only in this form, no prefix or suffix. It is usually a symlink to the real compiler,
+    we will always detect it as !clang (FIXME?).
  - gcc/g++
     Including a possible prefix or postfix separated by '-' (e.g. aarch64-suse-linux-gcc-6)
  - clang/clang++

@@ -32,7 +32,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <poll.h>
-#include <signal.h>
+#include <sys/signal.h>
 #include <unistd.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -47,7 +47,6 @@
 #include <cassert>
 #include <fstream>
 #include <string>
-#include <limits>
 #include <stdio.h>
 #include <pwd.h>
 #include "../services/comm.h"
@@ -316,7 +315,7 @@ static float server_speed(CompileServer *cs, Job *job, bool blockDebug)
              * takes care of the fact that not all slots are equally fast on
              * CPUs with SMT and dynamic clock ramping.
              */
-            f *= (1.0f - (0.5f * cs->currentJobCount() / cs->maxJobs()));
+            f *= (1.0f - (0.5f * cs->jobList().size() / cs->maxJobs()));
         }
 
         // below we add a pessimism factor - assuming the first job a computer got is not representative
@@ -568,9 +567,8 @@ static bool handle_local_job(CompileServer *cs, Msg *_m)
     }
 
     ++new_job_id;
-    trace() << "handle_local_job " << (m->fulljob ? "(full) " : "") << m->outfile
-        << " " << m->id << endl;
-    cs->insertClientLocalJobId(m->id, new_job_id, m->fulljob);
+    trace() << "handle_local_job " << m->outfile << " " << m->id << endl;
+    cs->insertClientJobId(m->id, new_job_id);
     notify_monitors(new MonLocalJobBeginMsg(new_job_id, m->outfile, m->stime, cs->hostId()));
     return true;
 }
@@ -584,8 +582,8 @@ static bool handle_local_job_done(CompileServer *cs, Msg *_m)
     }
 
     trace() << "handle_local_job_done " << m->job_id << endl;
-    notify_monitors(new JobLocalDoneMsg(cs->getClientLocalJobId(m->job_id)));
-    cs->eraseClientLocalJobId(m->job_id);
+    notify_monitors(new JobLocalDoneMsg(cs->getClientJobId(m->job_id)));
+    cs->eraseClientJobId(m->job_id);
     return true;
 }
 
@@ -626,158 +624,72 @@ static string envs_match(CompileServer *cs, const Job *job)
     return string();
 }
 
-static list<CompileServer *> filter_ineligible_servers(Job *job)
+static CompileServer *pick_server(Job *job)
 {
-    list<CompileServer *> eligible;
-    std::copy_if(
-        css.begin(),
-        css.end(),
-        std::back_inserter(eligible),
-        [=](CompileServer* cs) {
-            if (!cs->is_eligible_now(job)) {
 #if DEBUG_SCHEDULER > 1
-                if ((cs->currentJobCount() >= cs->maxJobs() + cs->maxPreloadCount()) || (cs->load() >= 1000)) {
-                    trace() << "overloaded " << cs->nodeName() << " " << cs->currentJobCount() << "/"
-                            <<  cs->maxJobs() << " jobs, load:" << cs->load() << endl;
-                } else
-                    trace() << cs->nodeName() << " not eligible" << endl;
+    trace() << "pick_server " << job->id() << " " << job->targetPlatform() << endl;
 #endif
-                return false;
-            }
 
-            // incompatible architecture or busy installing
-            if (!cs->can_install(job).size()) {
-#if DEBUG_SCHEDULER > 2
-                trace() << cs->nodeName() << " can't install " << job->id() << endl;
-#endif
-                return false;
-            }
+#if DEBUG_SCHEDULER > 0
 
-            /* Don't use non-chroot-able daemons for remote jobs.  XXX */
-            if (!cs->chrootPossible() && cs != job->submitter()) {
-                trace() << cs->nodeName() << " can't use chroot\n";
-                return false;
-            }
+    /* consistency checking for now */
+    for (list<CompileServer *>::iterator it = css.begin(); it != css.end(); ++it) {
+        CompileServer *cs = *it;
 
-            // Check if remote & if remote allowed
-            if (!cs->check_remote(job)) {
-                trace() << cs->nodeName() << " fails remote job check\n";
-                return false;
-            }
-
-            return true;
-        });
-    return eligible;
-}
-
-static CompileServer *pick_server_random(list<CompileServer *> &eligible)
-{
-    auto iter = eligible.cbegin();
-    std::advance(iter, random() % eligible.size());
-    return *iter;
-}
-
-static CompileServer *pick_server_round_robin(list<CompileServer *> &eligible)
-{
-    unsigned int oldest_job = 0;
-    CompileServer *selected = nullptr;
-
-    // The scheduler assigns each job a unique ID from a monotonically increasing
-    // integer sequence starting from 1. When a job is assigned to a compile
-    // server, the scheduler records the assigned job ID, which is then available
-    // from lastPickedId().
-    for (CompileServer * const cs: eligible) {
-#if DEBUG_SCHEDULER > 1
-        trace()
-            << "considering server " << cs->nodeName() << " with last job ID "
-            << cs->lastPickedId() << " and oldest known job ID " << oldest_job
-            << endl;
-#endif
-        if (!selected || cs->lastPickedId() < oldest_job) {
-            selected = cs;
-            oldest_job = cs->lastPickedId();
-        }
-    }
-    return selected;
-}
-
-static CompileServer *pick_server_least_busy(list<CompileServer *> &eligible)
-{
-    unsigned long min_load = 0;
-    list<CompileServer *> selected_list;
-
-    // We want to pick the server with the fewest run jobs, but in a round-robin
-    // fashion if multiple happen to be the least-busy so we can distribute the
-    // load out better.
-    for (CompileServer * const cs: eligible) {
-#if DEBUG_SCHEDULER > 1
-        trace()
-            << "considering server " << cs->nodeName() << " with "
-            << cs->currentJobCount() << " of " << cs->maxJobs() << " maximum jobs"
-            << endl;
-#endif
-        if (cs->maxJobs()) {
-            unsigned long cs_load = 0;
-
-            // Calculate the ceiling of the current job load ratio
-            if (cs->currentJobCount()) {
-                cs_load = 1 + ((cs->currentJobCount() - 1) / cs->maxJobs());
-            }
-
-            if (cs_load < min_load) {
-                min_load = cs_load;
-            }
+        list<Job *> jobList = cs->jobList();
+        for (list<Job *>::const_iterator it2 = jobList.begin(); it2 != jobList.end(); ++it2) {
+            assert(jobs.find((*it2)->id()) != jobs.end());
         }
     }
 
-    std::copy_if(
-        eligible.begin(),
-        eligible.end(),
-        std::back_inserter(selected_list),
-        [=](CompileServer* cs) {
-            return cs->maxJobs() && size_t(cs->currentJobCount()) / cs->maxJobs() == min_load;
-        });
+    for (map<unsigned int, Job *>::const_iterator it = jobs.begin();
+            it != jobs.end(); ++it) {
+        Job *j = it->second;
 
-#if DEBUG_SCHEDULER > 1
-    trace()
-        << "servers to consider further: " << selected_list.size()
-        << ", using ROUND_ROBIN for final selection" << endl;
-#endif
-    return pick_server_round_robin(selected_list);
-}
-
-static CompileServer *pick_server_new(Job *job, list<CompileServer *> &eligible)
-{
-    CompileServer *selected = nullptr;
-
-    for (CompileServer * const cs: eligible) {
-        if ((cs->lastCompiledJobs().size() == 0) && (cs->currentJobCount() == 0) && cs->maxJobs()) {
-            if (!selected) {
-                selected = cs;
-            } else if (!envs_match(cs, job).empty()) {
-                // if there is one server that already got the environment and one that
-                // hasn't compiled at all, pick the one with environment first
-                selected = cs;
-            }
+        if (j->state() == Job::COMPILING) {
+            CompileServer *cs = j->server();
+            list<Job *> jobList = cs->jobList();
+            assert(find(jobList.begin(), jobList.end(), j) != jobList.end());
         }
     }
-    return selected;
-}
 
-static CompileServer *pick_server_fastest(Job *job, list<CompileServer *> &eligible)
-{
-    // If we have no statistics simply use any server which is usable
-    if (!all_job_stats.size()) {
-        CompileServer *selected = pick_server_random(eligible);
-        trace()
-            << "no job stats - returning randomly selected "
-            << selected->nodeName()
-            << " load: "
-            << selected->load()
-            << " can install: "
-            << selected->can_install(job)
-            << endl;
-        return selected;
+#endif
+
+    /* if the user wants to test/prefer one specific daemon, we look for that one first */
+    if (!job->preferredHost().empty()) {
+        for (CompileServer* const cs : css) {
+            if (cs->matches(job->preferredHost()) && cs->is_eligible_now(job)) {
+#if DEBUG_SCHEDULER > 1
+                trace() << "taking preferred " << cs->nodeName() << " " <<  server_speed(cs, job, true) << endl;
+#endif
+                return cs;
+            }
+        }
+
+        return nullptr;
+    }
+
+    /* If we have no statistics simply use any server which is usable.  */
+    if (!all_job_stats.size ()) {
+        CompileServer *selected = nullptr;
+        int eligible_count = 0;
+
+        for (CompileServer* const cs : css) {
+            if (cs->is_eligible_now( job )) {
+                ++eligible_count;
+                // Do not select the first one (which could be broken and so we might never get job stats),
+                // but rather select randomly.
+                if( random() % eligible_count == 0 )
+                  selected = cs;
+            }
+        }
+
+        if( selected != nullptr ) {
+            trace() << "no job stats - returning randomly selected " << selected->nodeName() << " load: " << selected->load() << " can install: " << selected->can_install(job) << endl;
+            return selected;
+        }
+
+        return nullptr;
     }
 
     CompileServer *best = nullptr;
@@ -786,33 +698,70 @@ static CompileServer *pick_server_fastest(Job *job, list<CompileServer *> &eligi
     // best preloadable host
     CompileServer *bestpre = nullptr;
 
-    // Any "new" servers with no stats should be selected first so we can get the stats we need.
-    best = pick_server_new(job, eligible);
-    if (best) {
-        return best;
-    }
+    uint matches = 0;
 
-    for (CompileServer * const cs : eligible) {
+    for (CompileServer * const cs : css) {
+
+        // Ignore ineligible servers
+        if (!cs->is_eligible_now(job)) {
+#if DEBUG_SCHEDULER > 1
+            if ((int(cs->jobList().size()) >= cs->maxJobs() + cs->maxPreloadCount()) || (cs->load() >= 1000)) {
+                trace() << "overloaded " << cs->nodeName() << " " << cs->jobList().size() << "/"
+                        <<  cs->maxJobs() << " jobs, load:" << cs->load() << endl;
+            } else
+                trace() << cs->nodeName() << " not eligible" << endl;
+#endif
+            continue;
+        }
+
+        // incompatible architecture or busy installing
+        if (!cs->can_install(job).size()) {
+#if DEBUG_SCHEDULER > 2
+            trace() << cs->nodeName() << " can't install " << job->id() << endl;
+#endif
+            continue;
+        }
+
+        /* Don't use non-chroot-able daemons for remote jobs.  XXX */
+        if (!cs->chrootPossible() && cs != job->submitter()) {
+            trace() << cs->nodeName() << " can't use chroot\n";
+            continue;
+        }
+
+        // Check if remote & if remote allowed
+        if (!cs->check_remote(job)) {
+            trace() << cs->nodeName() << " fails remote job check\n";
+            continue;
+        }
+
 
 #if DEBUG_SCHEDULER > 1
         trace() << cs->nodeName() << " compiled " << cs->lastCompiledJobs().size() << " got now: " <<
-                cs->currentJobCount() << " speed: " << server_speed(cs, job, true) << " compile time " <<
+                cs->jobList().size() << " speed: " << server_speed(cs, job, true) << " compile time " <<
                 cs->cumCompiled().compileTimeUser() << " produced code " << cs->cumCompiled().outputSize() <<
                 " client count: " << cs->clientCount() << endl;
 #endif
 
-        // Some portion of the selection will go to a host that has not been selected
-        // in a while so we can maintain reasonably up-to-date statistics. The greater
-        // the weight, the less likely this is to happen.
-        uint8_t weight_limit = std::numeric_limits<uint8_t>::max() - STATS_UPDATE_WEIGHT;
-        uint8_t weight_factor = weight_limit / std::numeric_limits<uint8_t>::max();
+        if ((cs->lastCompiledJobs().size() == 0) && (cs->jobList().size() == 0) && cs->maxJobs()) {
+            /* Make all servers compile a job at least once, so we'll get an
+               idea about their speed.  */
+            if (!envs_match(cs, job).empty()) {
+                best = cs;
+                matches++;
+            } else {
+                // if there is one server that already got the environment and one that
+                // hasn't compiled at all, pick the one with environment first
+                bestui = cs;
+            }
 
-        // Job IDs are assigned from a monotonically increasing sequence by the
-        // scheduler, and each compile server records the ID of the last job it
-        // ran. We use that here to determine whether a job should simply run on
-        // the "next" host that hasn't seen a job for a long time.
-        if (weight_factor > 0 && (!cs->lastPickedId() ||
-            ((job->id() - cs->lastPickedId()) > (weight_factor * eligible.size())))) {
+            break;
+        }
+
+        /* Distribute 5% of our jobs to servers which haven't been picked in a
+           long time. This gives us a chance to adjust the server speed rating,
+           which may change due to external influences out of our control. */
+        if (!cs->lastPickedId() ||
+            ((job->id() - cs->lastPickedId()) > (20 * css.size()))) {
             best = cs;
             break;
         }
@@ -821,26 +770,27 @@ static CompileServer *pick_server_fastest(Job *job, list<CompileServer *> &eligi
             if (!best) {
                 best = cs;
             }
-            // Search the server with the earliest projected time to compile
-            // the job.  (XXX currently this is equivalent to the fastest one)
+            /* Search the server with the earliest projected time to compile
+               the job.  (XXX currently this is equivalent to the fastest one)  */
             else if ((best->lastCompiledJobs().size() != 0)
                      && (server_speed(best, job) < server_speed(cs, job))) {
-                if (cs->currentJobCount() < cs->maxJobs()) {
+                if (int(cs->jobList().size()) < cs->maxJobs()) {
                     best = cs;
                 } else {
                     bestpre = cs;
                 }
             }
 
+            matches++;
         } else {
             if (!bestui) {
                 bestui = cs;
             }
-            // Search the server with the earliest projected time to compile
-            // the job.  (XXX currently this is equivalent to the fastest one)
+            /* Search the server with the earliest projected time to compile
+               the job.  (XXX currently this is equivalent to the fastest one)  */
             else if ((bestui->lastCompiledJobs().size() != 0)
                      && (server_speed(bestui, job) < server_speed(cs, job))) {
-                if (cs->currentJobCount() < cs->maxJobs()) {
+                if (int(cs->jobList().size()) < cs->maxJobs()) {
                     bestui = cs;
                 } else {
                     bestpre = cs;
@@ -870,104 +820,6 @@ static CompileServer *pick_server_fastest(Job *job, list<CompileServer *> &eligi
     }
 
     return bestpre;
-}
-
-static CompileServer *pick_server(Job *job, SchedulerAlgorithmName schedulerAlgorithm)
-{
-#if DEBUG_SCHEDULER > 0
-    /* consistency checking for now */
-    for (list<CompileServer *>::iterator it = css.begin(); it != css.end(); ++it) {
-        CompileServer *cs = *it;
-
-        const list<Job *>& jobList = cs->jobList();
-        for (list<Job *>::const_iterator it2 = jobList.begin(); it2 != jobList.end(); ++it2) {
-            assert(jobs.find((*it2)->id()) != jobs.end());
-        }
-    }
-
-    for (map<unsigned int, Job *>::const_iterator it = jobs.begin();
-            it != jobs.end(); ++it) {
-        Job *j = it->second;
-
-        if (j->state() == Job::COMPILING) {
-            CompileServer *cs = j->server();
-            const list<Job *>& jobList = cs->jobList();
-            assert(find(jobList.begin(), jobList.end(), j) != jobList.end());
-        }
-    }
-#endif
-
-    // Ignore ineligible servers
-    list<CompileServer *> eligible = filter_ineligible_servers(job);
-
-#if DEBUG_SCHEDULER > 1
-    trace() << "pick_server " << job->id() << " " << job->targetPlatform() << endl;
-#endif
-
-    /* if the user wants to test/prefer one specific daemon, we return it if available */
-    if (!job->preferredHost().empty()) {
-        for (CompileServer* const cs : css) {
-            if (cs->matches(job->preferredHost()) && cs->is_eligible_now(job)) {
-#if DEBUG_SCHEDULER > 1
-                trace() << "taking preferred " << cs->nodeName() << " " <<  server_speed(cs, job, true) << endl;
-#endif
-                return cs;
-            }
-        }
-
-        return nullptr;
-    }
-
-    // Don't bother running an algorithm if we don't need to.
-    if ( eligible.size() == 0 ) {
-        trace() << "no eligible servers" << endl;
-        return nullptr;
-    } else if (eligible.size() == 1) {
-        CompileServer *selected = eligible.front();
-        trace() << "returning only available server "
-            << selected->nodeName()
-            << " load: "
-            << selected->load()
-            << " can install: "
-            << selected->can_install(job)
-            << endl;
-        return selected;
-    }
-
-    CompileServer *selected;
-    switch (schedulerAlgorithm) {
-        case SchedulerAlgorithmName::NONE:
-        case SchedulerAlgorithmName::UNDEFINED:
-            [[fallthrough]];
-        default:
-            trace()
-                << "unknown scheduler algorithm " << schedulerAlgorithm
-                << ", using " << SchedulerAlgorithmName::RANDOM << endl;
-            [[fallthrough]];
-        case SchedulerAlgorithmName::RANDOM:
-            selected = pick_server_random(eligible);
-            break;
-        case SchedulerAlgorithmName::ROUND_ROBIN:
-            selected = pick_server_round_robin(eligible);
-            break;
-        case SchedulerAlgorithmName::LEAST_BUSY:
-            selected = pick_server_least_busy(eligible);
-            break;
-        case SchedulerAlgorithmName::FASTEST:
-            selected = pick_server_fastest(job, eligible);
-            break;
-    }
-
-    if (selected) {
-        trace()
-            << "selected " << selected->nodeName()
-            << " using " << schedulerAlgorithm << " algorithm" << endl;
-    } else {
-        trace()
-            << "failed to select a server using "
-            << schedulerAlgorithm << " algorithm" << endl;
-    }
-    return selected;
 }
 
 /* Prunes the list of connected servers by those which haven't
@@ -1009,7 +861,7 @@ static time_t prune_servers()
         }
 
         /* protocol version 27 and newer use TCP keepalive */
-        if (IS_PROTOCOL_VERSION(27, *it)) {
+        if (IS_PROTOCOL_27(*it)) {
             ++it;
             continue;
         }
@@ -1056,7 +908,7 @@ static time_t prune_servers()
     return min_time;
 }
 
-static bool empty_queue(SchedulerAlgorithmName schedulerAlgorithm)
+static bool empty_queue()
 {
     JobRequestPosition jobPosition = get_first_job_request();
     if (!jobPosition.isValid()) {
@@ -1069,7 +921,7 @@ static bool empty_queue(SchedulerAlgorithmName schedulerAlgorithm)
     Job* job = jobPosition.job;
 
     while (true) {
-        use_cs = pick_server(job, schedulerAlgorithm);
+        use_cs = pick_server(job);
 
         if (use_cs) {
             break;
@@ -1078,7 +930,7 @@ static bool empty_queue(SchedulerAlgorithmName schedulerAlgorithm)
         /* Ignore the load on the submitter itself if no other host could
            be found.  We only obey to its max job number.  */
         use_cs = job->submitter();
-        if ((use_cs->currentJobCount() < use_cs->maxJobs())
+        if ((int(use_cs->jobList().size()) < use_cs->maxJobs())
                 && job->preferredHost().empty()
                 /* This should be trivially true.  */
                 && use_cs->can_install(job).size()) {
@@ -1144,7 +996,7 @@ static bool empty_queue(SchedulerAlgorithmName schedulerAlgorithm)
             break;
         }
     }
-    if(IS_PROTOCOL_VERSION(37, job->submitter()) && use_cs == job->submitter())
+    if(IS_PROTOCOL_37(job->submitter()) && use_cs == job->submitter())
     {
         NoCSMsg m2(job->id(), job->localClientId());
         if (!job->submitter()->send_msg(m2)) {
@@ -1259,7 +1111,7 @@ static bool handle_login(CompileServer *cs, Msg *_m)
     css.push_back(cs);
 
     /* Configure the daemon */
-    if (IS_PROTOCOL_VERSION(24, cs)) {
+    if (IS_PROTOCOL_24(cs)) {
         cs->send_msg(ConfCSMsg());
     }
 
@@ -1288,7 +1140,7 @@ static bool handle_relogin(MsgChannel *mc, Msg *_m)
     dbg << "]" << endl;
 
     /* Configure the daemon */
-    if (IS_PROTOCOL_VERSION(24, cs)) {
+    if (IS_PROTOCOL_24(cs)) {
         cs->send_msg(ConfCSMsg());
     }
 
@@ -1493,7 +1345,7 @@ static bool handle_stats(CompileServer *cs, Msg *_m)
 
     /* Before protocol 25, ping and stat handling was
        clutched together.  */
-    if (!IS_PROTOCOL_VERSION(25, cs)) {
+    if (!IS_PROTOCOL_25(cs)) {
         cs->last_talk = time(nullptr);
 
         if (cs->maxJobs() < 0) {
@@ -1634,7 +1486,7 @@ static bool handle_line(CompileServer *cs, Msg *_m)
             line = " " + it->nodeName() + buffer;
             line += "[" + it->hostPlatform() + "] speed=";
             sprintf(buffer, "%.2f jobs=%d/%d load=%u", server_speed(it),
-                    it->currentJobCount(), it->maxJobs(), it->load());
+                    (int)it->jobList().size(), it->maxJobs(), it->load());
             line += buffer;
 
             if (it->busyInstalling()) {
@@ -1646,7 +1498,7 @@ static bool handle_line(CompileServer *cs, Msg *_m)
                 return false;
             }
 
-            const list<Job *>& jobList = it->jobList();
+            list<Job *> jobList = it->jobList();
             for (list<Job *>::const_iterator it2 = jobList.begin(); it2 != jobList.end(); ++it2) {
                 if (!cs->send_msg(TextMsg("   " + dump_job(*it2)))) {
                     return false;
@@ -1723,7 +1575,7 @@ static bool handle_line(CompileServer *cs, Msg *_m)
                 msg = it->get_msg();
             }
 
-            if (msg && *msg == Msg::STATUS_TEXT) {
+            if (msg && msg->type == M_STATUS_TEXT) {
                 if (!cs->send_msg(TextMsg(dynamic_cast<StatusTextMsg *>(msg)->text))) {
                     return false;
                 }
@@ -1758,17 +1610,17 @@ static bool try_login(CompileServer *cs, Msg *m)
 {
     bool ret = true;
 
-    switch (*m) {
-    case Msg::LOGIN:
+    switch (m->type) {
+    case M_LOGIN:
         cs->setType(CompileServer::DAEMON);
         ret = handle_login(cs, m);
         break;
-    case Msg::MON_LOGIN:
+    case M_MON_LOGIN:
         cs->setType(CompileServer::MONITOR);
         ret = handle_mon_login(cs, m);
         break;
     default:
-        log_info() << "Invalid first message " << m->to_string() << endl;
+        log_info() << "Invalid first message " << (char)m->type << endl;
         ret = false;
         break;
     }
@@ -1899,43 +1751,43 @@ static bool handle_activity(CompileServer *cs)
         return try_login(cs, m);
     }
 
-    switch (*m) {
-    case Msg::JOB_BEGIN:
+    switch (m->type) {
+    case M_JOB_BEGIN:
         ret = handle_job_begin(cs, m);
         break;
-    case Msg::JOB_DONE:
+    case M_JOB_DONE:
         ret = handle_job_done(cs, m);
         break;
-    case Msg::PING:
+    case M_PING:
         ret = handle_ping(cs, m);
         break;
-    case Msg::STATS:
+    case M_STATS:
         ret = handle_stats(cs, m);
         break;
-    case Msg::END:
+    case M_END:
         handle_end(cs, m);
         ret = false;
         break;
-    case Msg::JOB_LOCAL_BEGIN:
+    case M_JOB_LOCAL_BEGIN:
         ret = handle_local_job(cs, m);
         break;
-    case Msg::JOB_LOCAL_DONE:
+    case M_JOB_LOCAL_DONE:
         ret = handle_local_job_done(cs, m);
         break;
-    case Msg::LOGIN:
+    case M_LOGIN:
         ret = handle_relogin(cs, m);
         break;
-    case Msg::TEXT:
+    case M_TEXT:
         ret = handle_line(cs, m);
         break;
-    case Msg::GET_CS:
+    case M_GET_CS:
         ret = handle_cs_request(cs, m);
         break;
-    case Msg::BLACKLIST_HOST_ENV:
+    case M_BLACKLIST_HOST_ENV:
         ret = handle_blacklist_host_env(cs, m);
         break;
     default:
-        log_info() << "Invalid message type arrived " << m->to_string() << endl;
+        log_info() << "Invalid message type arrived " << (char)m->type << endl;
         handle_end(cs, m);
         ret = false;
         break;
@@ -2016,9 +1868,9 @@ static int open_tcp_listener(short port, const string &interface)
     return fd;
 }
 
-static void usage(const std::string reason = "")
+static void usage(const char *reason = nullptr)
 {
-    if (! reason.empty()) {
+    if (reason) {
         cerr << reason << endl;
     }
 
@@ -2034,7 +1886,6 @@ static void usage(const std::string reason = "")
          << "  -u, --user-uid\n"
          << "  -v[v[v]]]\n"
          << "  -r, --persistent-client-connection\n"
-         << "  -a, --algorithm <name>\n"
          << endl;
 
     exit(1);
@@ -2107,7 +1958,6 @@ int main(int argc, char *argv[])
     uid_t user_uid;
     gid_t user_gid;
     int warn_icecc_user_errno = 0;
-    SchedulerAlgorithmName scheduler_algo = SchedulerAlgorithmName::FASTEST;
 
     if (getuid() == 0) {
         struct passwd *pw = getpwnam("icecc");
@@ -2136,11 +1986,10 @@ int main(int argc, char *argv[])
             { "daemonize", 0, nullptr, 'd'},
             { "log-file", 1, nullptr, 'l'},
             { "user-uid", 1, nullptr, 'u'},
-            { "algorithm", 1, nullptr, 'a' },
             { nullptr, 0, nullptr, 0 }
         };
 
-        const int c = getopt_long(argc, argv, "n:i:p:hl:vdru:a:", long_options, &option_index);
+        const int c = getopt_long(argc, argv, "n:i:p:hl:vdru:", long_options, &option_index);
 
         if (c == -1) {
             break;    // eoo
@@ -2228,33 +2077,6 @@ int main(int argc, char *argv[])
             }
 
             break;
-        case 'a':
-
-            if (optarg && *optarg) {
-                string algorithm_name = optarg;
-                std::transform(
-                        algorithm_name.begin(),
-                        algorithm_name.end(),
-                        algorithm_name.begin(),
-                        ::tolower);
-
-                if (algorithm_name == "random") {
-                    scheduler_algo = SchedulerAlgorithmName::RANDOM;
-                } else if (algorithm_name == "round_robin") {
-                    scheduler_algo = SchedulerAlgorithmName::ROUND_ROBIN;
-                } else if (algorithm_name == "least_busy") {
-                    scheduler_algo = SchedulerAlgorithmName::LEAST_BUSY;
-                } else if (algorithm_name == "fastest") {
-                    scheduler_algo = SchedulerAlgorithmName::FASTEST;
-                } else {
-                    usage("Error: " + algorithm_name + " is an unknown scheduler algorithm.");
-                }
-
-            } else {
-                usage("Error: -s requires a valid scheduler name");
-            }
-
-            break;
 
         default:
             usage();
@@ -2301,7 +2123,6 @@ int main(int argc, char *argv[])
     setup_debug(debug_level, logfile);
 
     log_info() << "ICECREAM scheduler " VERSION " starting up, port " << scheduler_port << endl;
-    log_info() << "Debug level: " << debug_level << endl;
 
     if (detach) {
         if (daemon(0, 0) != 0) {
@@ -2349,7 +2170,7 @@ int main(int argc, char *argv[])
     signal(SIGINT, trigger_exit);
     signal(SIGALRM, trigger_exit);
 
-    log_info() << "scheduler ready, algorithm: " <<  scheduler_algo << endl;
+    log_info() << "scheduler ready" << endl;
 
     time_t next_listen = 0;
 
@@ -2359,7 +2180,7 @@ int main(int argc, char *argv[])
     while (!exit_main_loop) {
         int timeout = prune_servers();
 
-        while (empty_queue(scheduler_algo)) {
+        while (empty_queue()) {
             continue;
         }
 

@@ -36,7 +36,6 @@
 #include <errno.h>
 #include <netdb.h>
 #include <getopt.h>
-#include <limits>
 
 #include <signal.h>
 #include <sys/stat.h>
@@ -138,12 +137,10 @@ public:
         job = nullptr;
         usecsmsg = nullptr;
         client_id = 0;
-        niceness = 0;
         status = UNKNOWN;
         pipe_from_child = -1;
         pipe_to_child = -1;
         child_pid = -1;
-        fulljob = false;
     }
 
     static string status_str(Status status) {
@@ -207,13 +204,11 @@ public:
     UseCSMsg *usecsmsg;
     CompileJob *job;
     int client_id;
-    uint32_t niceness; // nice priority (0-20), for PENDING_USE_CS
     // pipe from child process with end status, only valid if WAITFORCHILD or TOINSTALL/WAITINSTALL
     int pipe_from_child;
     // pipe to child process, only valid if TOINSTALL/WAITINSTALL
     int pipe_to_child;
     pid_t child_pid;
-    bool fulljob; // during LINKJOB and CLIENTWORK, reserve all slots if set
     string pending_create_env; // only for WAITCREATEENV
 
     string dump() const {
@@ -221,8 +216,7 @@ public:
 
         switch (status) {
         case LINKJOB:
-            return ret + " ClientID: " + toString(client_id) + " " + outfile + (fulljob ? " (full)" : "")
-                + " PID: " + toString(child_pid);
+            return ret + " ClientID: " + toString(client_id) + " " + outfile + " PID: " + toString(child_pid);
         case TOINSTALL:
         case WAITINSTALL:
             return ret + " ClientID: " + toString(client_id) + " " + outfile + " PID: " + toString(child_pid);
@@ -231,16 +225,21 @@ public:
         case WAITCREATEENV:
             return ret + " " + toString(client_id) + " " + pending_create_env;
         default:
-            ret += " ClientID: " + toString(client_id);
+
             if (job_id) {
-                ret += " Job ID: " + toString(job_id);
-                if (usecsmsg)
-                    ret += " CompileServer: " + usecsmsg->hostname;
+                string jobs;
+
+                if (usecsmsg) {
+                    jobs = " CompileServer: " + usecsmsg->hostname;
+                }
+
+                return ret + " ClientID: " + toString(client_id) + " Job ID: " + toString(job_id) + jobs;
+            } else {
+                return ret + " ClientID: " + toString(client_id);
             }
-            if (niceness != 0)
-                ret += " Nice: " + toString(niceness);
-            return ret;
         }
+
+        return ret;
     }
 };
 
@@ -259,6 +258,16 @@ public:
             }
 
         return nullptr;
+    }
+
+    Client *find_by_channel(MsgChannel *c) const {
+        const_iterator it = find(c);
+
+        if (it == end()) {
+            return nullptr;
+        }
+
+        return it->second;
     }
 
     Client *find_by_pid(pid_t pid) const {
@@ -311,14 +320,11 @@ public:
         // TODO: possibly speed this up in adding some sorted lists
         Client *client = nullptr;
         int min_client_id = 0;
-        uint32_t min_niceness = std::numeric_limits<uint32_t>::max();
 
         for (auto it : *this) {
-            if (it.second->status == s && (!min_client_id || min_client_id > it.second->client_id)
-                && it.second->niceness < min_niceness ) {
+            if (it.second->status == s && (!min_client_id || min_client_id > it.second->client_id)) {
                 client = it.second;
                 min_client_id = client->client_id;
-                min_niceness = client->niceness;
             }
         }
 
@@ -472,7 +478,7 @@ struct Daemon {
     bool noremote;
     bool custom_nodename;
     size_t cache_size;
-    map<int, Client*> fd2client;
+    map<int, MsgChannel *> fd2chan;
     int new_client_id;
     string remote_name;
     time_t next_scheduler_connect;
@@ -673,7 +679,7 @@ bool Daemon::setup_listen_unix_fd()
             strncpy(myaddr.sun_path, default_socket.c_str() , sizeof(myaddr.sun_path) - 1);
             myaddr.sun_path[sizeof(myaddr.sun_path) - 1] = '\0';
             if(default_socket.length() > sizeof(myaddr.sun_path) - 1) {
-                log_error() << "default socket path too long for sun_path" << endl;
+                log_error() << "default socket path too long for sun_path" << endl;	
             }
             if (-1 == unlink(myaddr.sun_path) && errno != ENOENT){
                 log_perror("unlink failed") << "\t" << myaddr.sun_path << endl;
@@ -799,7 +805,7 @@ void Daemon::determine_supported_features()
 bool Daemon::send_scheduler(const Msg& msg)
 {
     if (!scheduler) {
-        log_warning() << "no scheduler" << endl;
+        log_error() << "scheduler dead ?!" << endl;
         return false;
     }
 
@@ -922,11 +928,11 @@ string Daemon::dump_internals() const
     result += "Node Name: " + nodename + "\n";
     result += "  Remote name: " + remote_name + "\n";
 
-    for (const auto& it : fd2client)  {
-        result += "  fd2client[" + toString(it.first) + "] = " + it.second->dump() + "\n";
+    for (auto it : fd2chan)  {
+        result += "  fd2chan[" + toString(it.first) + "] = " + it.second->dump() + "\n";
     }
 
-    for (const auto& client : clients)  {
+    for (auto client : clients)  {
         result += "  client " + toString(client.second->client_id) + ": " + client.second->dump() + "\n";
     }
 
@@ -1091,13 +1097,13 @@ bool Daemon::handle_file_chunk_env(Client *client, Msg *msg)
        the file chunk to the child, but we can't let the child
        handle MsgChannel itself due to MsgChannel's stupid
        caching layer inbetween, which causes us to lose partial
-       data after the END msg of the env transfer.  */
+       data after the M_END msg of the env transfer.  */
 
     assert(client);
     assert(client->status == Client::TOINSTALL || client->status == Client::WAITINSTALL);
     assert(client->pipe_to_child >= 0);
 
-    if (*msg == Msg::FILE_CHUNK) {
+    if (msg->type == M_FILE_CHUNK) {
         FileChunkMsg *fcmsg = static_cast<FileChunkMsg *>(msg);
         ssize_t len = fcmsg->len;
         off_t off = 0;
@@ -1129,7 +1135,7 @@ bool Daemon::handle_file_chunk_env(Client *client, Msg *msg)
         return true;
     }
 
-    if (*msg == Msg::END) {
+    if (msg->type == M_END) {
         trace() << "received end of environment, waiting for child" << endl;
         close(client->pipe_to_child);
         client->pipe_to_child = -1;
@@ -1143,7 +1149,7 @@ bool Daemon::handle_file_chunk_env(Client *client, Msg *msg)
     }
 
     // unexpected message type
-    log_error() << "protocol error while receiving environment (" << msg->to_string() << ")" << endl;
+    log_error() << "protocol error while receiving environment (" << msg->type << ")" << endl;
     handle_end(client, 138);
     return false;
 }
@@ -1176,7 +1182,7 @@ bool Daemon::handle_env_install_child_done(Client *client)
     if( !success )
         return finish_transfer_env( client, true ); // cancel
     if( client->pipe_to_child >= 0 ) {
-        // we still haven't received END message, wait for that
+        // we still haven't received M_END message, wait for that
         assert( client->status == Client::TOINSTALL );
         return true;
     }
@@ -1373,7 +1379,7 @@ bool Daemon::handle_get_native_env(Client *client, GetNativeEnvMsg *msg)
 
     string compiler = msg->compiler;
     // Older clients passed simply "gcc" or "clang" and not a binary.
-    if( !IS_PROTOCOL_VERSION(41, client->channel) && compiler.find('/') == string::npos)
+    if( !IS_PROTOCOL_41(client->channel) && compiler.find('/') == string::npos)
         compiler = "/usr/bin/" + compiler;
 
     string ccompiler = get_c_compiler(compiler);
@@ -1504,17 +1510,12 @@ bool Daemon::create_env_finished(string env_key)
 bool Daemon::handle_job_done(Client *cl, JobDoneMsg *m)
 {
     if (cl->status == Client::CLIENTWORK) {
-        if(cl->fulljob)
-            clients.active_processes -= std::max((unsigned int)1, max_kids);
-        else
-            clients.active_processes--;
+        clients.active_processes--;
     }
 
     cl->status = Client::JOBDONE;
     JobDoneMsg *msg = static_cast<JobDoneMsg *>(m);
-    trace() << "handle_job_done " << msg->job_id << " " << (cl->fulljob ? "(full) " : "")
-        << msg->exitcode << endl;
-    cl->fulljob = false;
+    trace() << "handle_job_done " << msg->job_id << " " << msg->exitcode << endl;
 
     if (!m->is_from_server()
             && (m->user_msec + m->sys_msec) <= m->real_msec) {
@@ -1543,15 +1544,10 @@ void Daemon::handle_old_request()
                 handle_end(client, 112);
             } else {
                 client->status = Client::CLIENTWORK;
-                if(client->fulljob) { // reserve the entire node
-                    clients.active_processes += std::max((unsigned int)1, max_kids);
-                    trace() << "pushed full local job " << client->client_id << endl;
-                } else {
-                    clients.active_processes++;
-                    trace() << "pushed local job " << client->client_id << endl;
-                }
-                if (!send_scheduler(JobLocalBeginMsg(client->client_id, client->outfile,
-                        client->fulljob))) {
+                clients.active_processes++;
+                trace() << "pushed local job " << client->client_id << endl;
+
+                if (!send_scheduler(JobLocalBeginMsg(client->client_id, client->outfile))) {
                     return;
                 }
             }
@@ -1720,19 +1716,15 @@ void Daemon::handle_end(Client *client, int exitcode)
     trace() << "handle_end " << client->dump() << endl;
     trace() << dump_internals() << endl;
 #endif
-    fd2client.erase(client->channel->fd);
+    fd2chan.erase(client->channel->fd);
 
     if (client->status == Client::TOINSTALL || client->status == Client::WAITINSTALL) {
         finish_transfer_env(client, true);
     }
 
     if (client->status == Client::CLIENTWORK) {
-        if(client->fulljob)
-            clients.active_processes -= std::max((unsigned int)1, max_kids);
-        else
-            clients.active_processes--;
+        clients.active_processes--;
     }
-    client->fulljob = false;
 
     if (client->status == Client::WAITCOMPILE && exitcode == 119) {
         /* the client sent us a real good bye, so forget about the scheduler */
@@ -1829,9 +1821,9 @@ void Daemon::clear_children()
     }
 
     // they should be all in clients too
-    assert(fd2client.empty());
+    assert(fd2chan.empty());
 
-    fd2client.clear();
+    fd2chan.clear();
     new_client_id = 0;
     trace() << "cleared children\n";
 }
@@ -1841,7 +1833,6 @@ bool Daemon::handle_get_cs(Client *client, Msg *msg)
     GetCSMsg *umsg = dynamic_cast<GetCSMsg *>(msg);
     assert(client);
     client->status = Client::WAITFORCS;
-    client->niceness = umsg->niceness;
     umsg->client_id = client->client_id;
     trace() << "handle_get_cs " << umsg->client_id << endl;
 
@@ -1870,10 +1861,8 @@ int Daemon::handle_cs_conf(ConfCSMsg *msg)
 
 bool Daemon::handle_local_job(Client *client, Msg *msg)
 {
-    JobLocalBeginMsg* m = dynamic_cast<JobLocalBeginMsg *>(msg);
     client->status = Client::LINKJOB;
-    client->outfile = m->outfile;
-    client->fulljob = m->fulljob;
+    client->outfile = dynamic_cast<JobLocalBeginMsg *>(msg)->outfile;
     return true;
 }
 
@@ -1896,37 +1885,37 @@ bool Daemon::handle_activity(Client *client)
         return ret;
     }
 
-    switch (*msg) {
-    case Msg::GET_NATIVE_ENV:
+    switch (msg->type) {
+    case M_GET_NATIVE_ENV:
         ret = handle_get_native_env(client, dynamic_cast<GetNativeEnvMsg *>(msg));
         break;
-    case Msg::COMPILE_FILE:
+    case M_COMPILE_FILE:
         ret = handle_compile_file(client, msg);
         break;
-    case Msg::TRANFER_ENV:
+    case M_TRANFER_ENV:
         ret = handle_transfer_env(client, dynamic_cast<EnvTransferMsg*>(msg));
         break;
-    case Msg::GET_CS:
+    case M_GET_CS:
         ret = handle_get_cs(client, msg);
         break;
-    case Msg::END:
+    case M_END:
         handle_end(client, 119);
         ret = false;
         break;
-    case Msg::JOB_LOCAL_BEGIN:
+    case M_JOB_LOCAL_BEGIN:
         ret = handle_local_job(client, msg);
         break;
-    case Msg::JOB_DONE:
+    case M_JOB_DONE:
         ret = handle_job_done(client, dynamic_cast<JobDoneMsg *>(msg));
         break;
-    case Msg::VERIFY_ENV:
+    case M_VERIFY_ENV:
         ret = handle_verify_env(client, dynamic_cast<VerifyEnvMsg *>(msg));
         break;
-    case Msg::BLACKLIST_HOST_ENV:
+    case M_BLACKLIST_HOST_ENV:
         ret = handle_blacklist_host_env(client, msg);
         break;
     default:
-        log_error() << "protocol error " << msg->to_string() << " on client "
+        log_error() << "protocol error " << msg->type << " on client "
                     << client->dump() << endl;
         client->channel->send_msg(EndMsg());
         handle_end(client, 120);
@@ -1963,7 +1952,7 @@ void Daemon::answer_client_requests()
     }
 
     vector< pollfd > pollfds;
-    pollfds.reserve( fd2client.size() + 6 );
+    pollfds.reserve( fd2chan.size() + 6 );
     pollfd pfd; // tmp varible
 
     if (tcp_listen_fd != -1) {
@@ -1981,13 +1970,14 @@ void Daemon::answer_client_requests()
     pfd.events = POLLIN;
     pollfds.push_back(pfd);
 
-    for (auto it = fd2client.begin(); it != fd2client.end();) {
+    for (map<int, MsgChannel *>::const_iterator it = fd2chan.begin();
+            it != fd2chan.end();) {
         int i = it->first;
-        Client *client = it->second;
-        MsgChannel *c = client->channel;
+        MsgChannel *c = it->second;
         ++it;
         /* don't select on a fd that we're currently not interested in.
            Avoids that we wake up on an event we're not handling anyway */
+        Client *client = clients.find_by_channel(c);
         assert(client);
         int current_status = client->status;
         bool ignore_channel = current_status == Client::WAITFORCHILD ||
@@ -2017,11 +2007,11 @@ void Daemon::answer_client_requests()
         pfd.fd = scheduler->fd;
         pfd.events = POLLIN;
         pollfds.push_back(pfd);
-    } else if (discover && (discover->listen_fd() >= 0 || discover->connect_fd() >= 0)) {
+    } else if (discover && discover->listen_fd() >= 0) {
         /* We don't explicitely check for discover->get_fd() being in
         the selected set below.  If it's set, we simply will return
         and our call will make sure we try to get the scheduler.  */
-        pfd.fd = discover->listen_fd() >= 0 ? discover->listen_fd() : discover->connect_fd();
+        pfd.fd = discover->listen_fd();
         pfd.events = POLLIN;
         pollfds.push_back(pfd);
     }
@@ -2065,28 +2055,28 @@ void Daemon::answer_client_requests()
 
                 ret = 0;
 
-                switch (*msg) {
-                case Msg::PING:
+                switch (msg->type) {
+                case M_PING:
 
-                    if (!IS_PROTOCOL_VERSION(27, scheduler)) {
+                    if (!IS_PROTOCOL_27(scheduler)) {
                         ret = !send_scheduler(PingMsg());
                     }
 
                     break;
-                case Msg::USE_CS:
+                case M_USE_CS:
                     ret = scheduler_use_cs(static_cast<UseCSMsg *>(msg));
                     break;
-                case Msg::NO_CS:
+                case M_NO_CS:
                     ret = scheduler_no_cs(static_cast<NoCSMsg *>(msg));
                     break;
-                case Msg::GET_INTERNALS:
+                case M_GET_INTERNALS:
                     ret = scheduler_get_internals();
                     break;
-                case Msg::CS_CONF:
+                case M_CS_CONF:
                     ret = handle_cs_conf(static_cast<ConfCSMsg *>(msg));
                     break;
                 default:
-                    log_error() << "unknown scheduler type " << msg->to_string() << endl;
+                    log_error() << "unknown scheduler type " << (char)msg->type << endl;
                     ret = 1;
                 }
 
@@ -2136,7 +2126,8 @@ void Daemon::answer_client_requests()
             client->channel = c;
             clients[c] = client;
 
-            fd2client[c->fd] = client;
+            fd2chan[c->fd] = c;
+
             trace() << "accepted " << c->fd << " " << c->name << " as " << client->client_id << endl;
 
             while (!c->read_a_bit() || c->has_msg()) {
@@ -2151,10 +2142,11 @@ void Daemon::answer_client_requests()
                 }
             }
         } else {
-            for (auto it = fd2client.begin(); it != fd2client.end();)  {
+            for (map<int, MsgChannel *>::const_iterator it = fd2chan.begin();
+                    it != fd2chan.end();)  {
                 int i = it->first;
-                Client *client = it->second;
-                MsgChannel *c = client->channel;
+                MsgChannel *c = it->second;
+                Client *client = clients.find_by_channel(c);
                 assert(client);
                 ++it;
 
@@ -2349,7 +2341,7 @@ int main(int argc, char **argv)
                     int mb = atoi(optarg);
 
                     if (!errno) {
-                        cache_size_limit = mb * 1024L * 1024;
+                        cache_size_limit = mb * 1024 * 1024;
                     }
                 } else {
                     usage("Error: --cache-limit requires argument");

@@ -84,14 +84,11 @@ public:
     int maxJobs() const;
     void setMaxJobs(const int jobs);
     int maxPreloadCount() const;
-    int currentJobCount() const;
-    int currentJobCountRemote() const;
-    int currentJobCountLocal() const;
 
     bool noRemote() const;
     void setNoRemote(const bool value);
 
-    const list<Job *>& jobList() const;
+    list<Job *> jobList() const;
     void appendJob(Job *job);
     void removeJob(Job *job);
     unsigned int lastPickedId();
@@ -135,9 +132,9 @@ public:
 
     unsigned int hostidCounter() const;
 
-    int getClientLocalJobId(const int localJobId);
-    void insertClientLocalJobId(const int localJobId, const int newJobId, bool fulljob);
-    void eraseClientLocalJobId(const int localJobId);
+    int getClientJobId(const int localJobId);
+    void insertClientJobId(const int localJobId, const int newJobId);
+    void eraseClientJobId(const int localJobId);
 
     map<const CompileServer *, Environments> blacklist() const;
     Environments getEnvsForBlacklistedCS(const CompileServer *cs);
@@ -183,15 +180,7 @@ private:
     JobStat m_cumRequested;
 
     static unsigned int s_hostIdCounter;
-
-    // map client ID for daemon to our IDs
-    struct LocalJobInfo
-    {
-        int id;
-        bool fulljob;
-    };
-    map<int, LocalJobInfo> m_clientLocalMap;
-
+    map<int, int> m_clientMap; // map client ID for daemon to our IDs
     map<const CompileServer *, Environments> m_blacklist;
 
     int m_inFd;

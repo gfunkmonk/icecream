@@ -3,7 +3,7 @@
 
 void g()
     {
-    int unused;
+    int unused; // this should also give a warning about being unused
     }
 
 #endif

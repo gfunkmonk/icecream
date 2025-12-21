@@ -286,7 +286,7 @@ static bool analyze_assembler_arg(string &arg, list<string> *extrafiles)
 }
 
 
-int analyse_argv(const char * const *argv, CompileJob &job, bool icerun, list<string> *extrafiles)
+bool analyse_argv(const char * const *argv, CompileJob &job, bool icerun, list<string> *extrafiles)
 {
     ArgumentsList args;
     string ofile;
@@ -315,7 +315,6 @@ int analyse_argv(const char * const *argv, CompileJob &job, bool icerun, list<st
     bool seen_march_native = false;
     bool seen_mcpu_native = false;
     bool seen_mtune_native = false;
-    std::string seen_parallel_flto;
     const char *standard = nullptr;
     // if rewriting includes and precompiling on remote machine, then cpp args are not local
     Argument_Type Arg_Cpp = compiler_only_rewrite_includes(job) ? Arg_Rest : Arg_Local;
@@ -348,14 +347,6 @@ int analyse_argv(const char * const *argv, CompileJob &job, bool icerun, list<st
                 args.append(a, Arg_Local);
                 /* These two generate dependencies as a side effect.  They
                  * should work with the way we call cpp. */
-                if (str_startswith("-Wp,-MD", a) || str_startswith("-Wp,-MMD", a)) {
-                    /* When -Wp,-MD or -Wp,-MMD includes a filename */
-                    const char* comma = strchr(a + 7, ',');
-                    if (comma != nullptr) {
-                        seen_mf = true;
-                        /* we saw the filename so don't add additional -MF */
-                    }
-                }
             } else if (!strcmp(a, "-MG") || !strcmp(a, "-MP")) {
                 args.append(a, Arg_Local);
                 /* These just modify the behaviour of other -M* options and do
@@ -449,8 +440,8 @@ int analyse_argv(const char * const *argv, CompileJob &job, bool icerun, list<st
                        || !strcmp(a, "-fprofile-use")
                        || !strcmp(a, "-save-temps")
                        || !strcmp(a, "--save-temps")
-                       || str_startswith("-save-temps=", a)
-                       || str_startswith("--save-temps=", a)
+                       || str_startswith(a, "-save-temps=")
+                       || str_startswith(a, "--save-temps=")
                        || !strcmp(a, "-fbranch-probabilities")) {
                 log_warning() << "compiler will emit additional local files (argument " << a << "); building locally" << endl;
                 always_local = true;
@@ -627,11 +618,9 @@ int analyse_argv(const char * const *argv, CompileJob &job, bool icerun, list<st
                 args.append(a, Arg_Rest);
             } else if (str_startswith("-fplugin=", a)
                        || str_startswith("-fsanitize-blacklist=", a)
-                       || str_startswith("-fprofile-sample-use=", a)
-                       || str_startswith("-fprofile-instr-use=", a)) {
+                       || str_startswith("-fprofile-sample-use=", a)) {
                 const char* prefix = nullptr;
-                static const char* const prefixes[] = { "-fplugin=", "-fsanitize-blacklist=",
-                    "-fprofile-sample-use=", "-fprofile-instr-use=" };
+                static const char* const prefixes[] = { "-fplugin=", "-fsanitize-blacklist=", "-fprofile-sample-use=" };
                 for(const char* const pr : prefixes) {
                     if( str_startswith(pr, a)) {
                         prefix = pr;
@@ -698,9 +687,6 @@ int analyse_argv(const char * const *argv, CompileJob &job, bool icerun, list<st
             } else if (str_startswith("--target=", a)) {
                 seen_target = true;
                 args.append(a, Arg_Rest);
-            } else if (str_startswith("-std=", a)) {
-                standard = a + strlen("-std=");
-                args.append(a, Arg_Rest);
             } else if (str_equal("-Wunused-macros", a)
                        || str_equal("-Werror=unused-macros", a)) {
                 wunused_macros = true;
@@ -723,15 +709,6 @@ int analyse_argv(const char * const *argv, CompileJob &job, bool icerun, list<st
                 if (argv[i + 1]) {
                     args.append(argv[++i], Arg_Rest);
                 }
-            } else if (str_startswith("-flto", a)) {
-                args.append(a, Arg_Rest);
-                // If -flto will be parallel (and thus use all cores), make it a "full" job
-                // so that it reserves the entire local node. The only non-parallel -flto
-                // options appear to be GCC's -flto without arguments or -flto=1.
-                if( compiler_is_clang(job))
-                    seen_parallel_flto = a;
-                else if( !str_equal("-flto", a) && !str_equal("-flto=1", a))
-                    seen_parallel_flto = a;
             } else {
                 args.append(a, Arg_Rest);
 
@@ -969,13 +946,5 @@ int analyse_argv(const char * const *argv, CompileJob &job, bool icerun, list<st
             << endl;
 #endif
 
-    int ret = 0;
-    if( always_local ) {
-        ret |= AlwaysLocal;
-        if( !seen_parallel_flto.empty() && !seen_c ) {
-            ret |= FullJob;
-            trace() << seen_parallel_flto << " and no -c, building with all local slots" << endl;
-        }
-    }
-    return ret;
+    return always_local;
 }

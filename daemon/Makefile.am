@@ -15,8 +15,7 @@ iceccd_LDADD = \
 	$(LIBARCHIVE_LIBS)
 
 AM_CPPFLAGS = \
-	-I$(top_srcdir)/services \
-	$(LIBARCHIVE_CFLAGS)
+	-I$(top_srcdir)/services
 
 AM_LIBTOOLFLAGS = --silent
 

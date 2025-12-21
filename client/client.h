@@ -43,16 +43,9 @@ extern std::string remote_daemon;
 /* in remote.cpp */
 extern std::string get_absfilename(const std::string &_file);
 
-enum RunFlags
-{
-    None        = 0,
-    AlwaysLocal = 1 << 0,  // The job should be built locally.
-    FullJob      = 1 << 1   // The job should reserve all slots (if AlwaysLocal).
-};
 /* In arg.cpp.  */
-// Returns RunFlags or-ed.
-extern int analyse_argv(const char * const *argv, CompileJob &job, bool icerun,
-                        std::list<std::string> *extrafiles);
+extern bool analyse_argv(const char * const *argv, CompileJob &job, bool icerun,
+                         std::list<std::string> *extrafiles);
 
 /* In cpp.cpp.  */
 extern pid_t call_cpp(CompileJob &job, int fdwrite, int fdread = -1);
@@ -90,7 +83,7 @@ extern Environments parse_icecc_version(const std::string &target, const std::st
 class client_error :  public std::runtime_error
 {
     public:
-    client_error(int code, const std::string& what)
+    client_error(int code, const std::string& what) 
     : std::runtime_error(what)
     , errorCode(code)
     {}
@@ -101,7 +94,7 @@ class client_error :  public std::runtime_error
 class remote_error : public client_error
 {
     public:
-    remote_error(int code, const std::string& what)
+    remote_error(int code, const std::string& what) 
     : client_error(code, what)
     {}
 };

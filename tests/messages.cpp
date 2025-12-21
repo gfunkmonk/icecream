@@ -2,5 +2,5 @@
 
 void f()
     {
-    int unused;
+    int unused; // this should give a warning about being unused
     }

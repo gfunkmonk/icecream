@@ -1,6 +1,6 @@
 # quite some macros are taken from distcc
 
-AC_PREREQ([2.69])
+AC_PREREQ([2.63])
 
 # ====================
 # Version informations
@@ -10,7 +10,7 @@ AC_PREREQ([2.69])
 # Pre-release versions: x.y.z, where z = 90 + X in rcX (1.1rc1 = 1.1.91)
 m4_define([icecream_version_major],[1])
 m4_define([icecream_version_minor],[4])
-m4_define([icecream_version_micro],[90])
+m4_define([icecream_version_micro],[0])
 m4_ifnblank(icecream_version_micro,
         [m4_define([icecream_version],[icecream_version_major.icecream_version_minor.icecream_version_micro])],
         [m4_define([icecream_version],[icecream_version_major.icecream_version_minor])])
@@ -18,7 +18,7 @@ m4_ifnblank(icecream_version_micro,
 # =============
 # Automake init
 # =============
-AC_INIT([icecc],[icecream_version])
+AC_INIT([icecc], [icecream_version])
 AC_CONFIG_MACRO_DIR([m4])
 AC_CONFIG_HEADERS([config.h])
 AM_INIT_AUTOMAKE([1.11 foreign dist-xz])
@@ -30,29 +30,35 @@ AC_LANG([C++])
 # ===========================
 AC_PROG_CC
 AC_PROG_CXX
-AC_PROG_SED
 
-AC_MSG_CHECKING([for C++17 support (-std=c++17)])
-CXXFLAGS="$CXXFLAGS -std=c++17"
-AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[
+AC_MSG_CHECKING([for C++11 support (-std=c++11)])
+CXXFLAGS="$CXXFLAGS -std=c++11"
+AC_TRY_COMPILE(
+    [
         constexpr int get_const() { return 5; }
-    ]], [[
-    ]])],[
+    ],
+    [
+    ],
+    [
         AC_MSG_RESULT(yes)
-    ],[ AC_MSG_ERROR(no) 
-])
+    ],
+    [ AC_MSG_ERROR(no) ]
+)
 
 if test "$GCC" = yes; then
     cast_align=-Wcast-align
     wshadow=
     AC_MSG_CHECKING([if GCC is actually Clang])
-    AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[]], [[
+    AC_TRY_COMPILE(
+        [],
+        [
             #ifdef __clang__
             return 0;
             #else
             fail
             #endif
-        ]])],[
+        ],
+        [
             AC_MSG_RESULT(yes)
             # The code has numerous cast alignment warnings that only clang warns about,
             # and it probably(?) doesn't matter in practice.
@@ -61,7 +67,8 @@ if test "$GCC" = yes; then
             # are very unlikely to be problems (e.g. function argument shadowing
             # a function elsewhere), so it's not so annoying.
             wshadow=-Wshadow
-        ],[ AC_MSG_RESULT(no) ])
+        ],
+        [ AC_MSG_RESULT(no) ])
     CFLAGS="-g -Wall -Wextra \
 -Wshadow -Wpointer-arith $cast_align -Wwrite-strings \
 -Waggregate-return -Wstrict-prototypes -Wmissing-prototypes \
@@ -90,7 +97,7 @@ PKG_PROG_PKG_CONFIG
 AC_C_INLINE
 AC_DISABLE_SHARED
 AC_ENABLE_STATIC
-LT_INIT
+AC_PROG_LIBTOOL
 
 AS_CASE([$host], [*linux*], [LIBCAP_NG_DEFAULT=yes], [LIBCAP_NG_DEFAULT=auto])
 PKG_HAVE_DEFINE_WITH_MODULES([LIBCAP_NG], [libcap-ng], , $LIBCAP_NG_DEFAULT)
@@ -105,17 +112,13 @@ AC_ARG_WITH(man,
 )
 AS_IF([test "x$with_man" != "xno"], [
     build_man=yes
-    AC_PATH_PROGS(ASCIIDOC, [asciidoc])
-    AS_IF([test -z "$ASCIIDOC"], [
-        AC_MSG_WARN([asciidoc is missing. Install asciidoc package.])
-        ASCIIDOC='echo asciidoc is missing. Install asciidoc package.'])
-    AC_PATH_PROGS(A2X, [a2x])
-    AS_IF([test -z "$A2X"], [
-        AC_MSG_WARN([a2x is missing. Install a2x package.])
-        A2X='echo a2x is missing. Install a2x package.'])
+    AC_PATH_PROGS(DOCBOOK2X,
+        [docbook2x-man db2x_docbook2man docbook-to-man docbook2man.pl docbook2man])
+    AS_IF([test -z "$DOCBOOK2X"], [
+        AC_MSG_WARN([docbook2x is missing. Install docbook2x package.])
+        DOCBOOK2X='echo docbook2x is missing. Install docbook2x package.'])
 ], [build_man=no])
-AC_SUBST(ASCIIDOC)
-AC_SUBST(A2X)
+AC_SUBST(DOCBOOK2X)
 AM_CONDITIONAL([WITH_ICECREAM_MAN], [test "x$build_man" != "xno"])
 
 ########################################################################
@@ -123,7 +126,7 @@ AM_CONDITIONAL([WITH_ICECREAM_MAN], [test "x$build_man" != "xno"])
 
 # Some of these are needed by popt (or other libraries included in the future).
 
-AC_CHECK_HEADERS([signal.h ifaddrs.h kinfo.h sys/param.h devstat.h])
+AC_CHECK_HEADERS([sys/signal.h ifaddrs.h kinfo.h sys/param.h devstat.h])
 AC_CHECK_HEADERS([sys/socketvar.h sys/vfs.h])
 AC_CHECK_HEADERS([mach/host_info.h])
 AC_CHECK_HEADERS([arpa/nameser.h], [], [],
@@ -209,13 +212,9 @@ AC_CHECK_FUNCS([flock lockf])
 AC_CHECK_FUNCS([strsignal])
 AC_CHECK_FUNCS([getloadavg])
 
-PKG_CHECK_MODULES([LIBLZO2], [lzo2], [[
-    # Remove the /lzo suffix from the -I include directory. LZO refers to its
-    # header files using this prefix, for example:. #include <lzo/lzoconf.h>.
-    # Instead, the parent directory (containing the /lzo directory) should be
-    # added to the preprocessor search path.
-    LIBLZO2_CFLAGS=`echo "$LIBLZO2_CFLAGS" | $SED -E 's@/lzo($|\\s)@ @g'`
-]])
+AC_CHECK_LIB(lzo2, lzo1x_1_compress, LZO_LDADD=-llzo2,
+	AC_MSG_ERROR([Could not find lzo2 library - please install lzo-devel]))
+AC_SUBST(LZO_LDADD)
 
 PKG_CHECK_MODULES([LIBZSTD], [libzstd])
 
@@ -225,25 +224,33 @@ AC_SUBST([DL_LDADD])
 PKG_CHECK_MODULES([LIBARCHIVE], [libarchive])
 
 AC_MSG_CHECKING([whether libarchive has archive_read_support_filter_xz()])
-AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[
+AC_TRY_COMPILE(
+    [
     #include <archive.h>
-    ]], [[
+    ],
+    [
         struct archive *a;
         archive_read_support_filter_xz(a);
-    ]])],[
+    ],
+    [
         AC_MSG_RESULT(yes)
         AC_DEFINE(HAVE_LIBARCHIVE_XZ, 1, [Whether libarchive has archive_read_support_filter_xz()])
-    ],[ AC_MSG_RESULT(no) ])
+    ],
+    [ AC_MSG_RESULT(no) ])
 AC_MSG_CHECKING([whether libarchive has archive_read_support_filter_zstd()])
-AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[
+AC_TRY_COMPILE(
+    [
     #include <archive.h>
-    ]], [[
+    ],
+    [
         struct archive *a;
         archive_read_support_filter_zstd(a);
-    ]])],[
+    ],
+    [
         AC_MSG_RESULT(yes)
         AC_DEFINE(HAVE_LIBARCHIVE_ZSTD, 1, [Whether libarchive has archive_read_support_filter_zstd()])
-    ],[ AC_MSG_RESULT(no) ])
+    ],
+    [ AC_MSG_RESULT(no) ])
 
 # In DragonFlyBSD daemon needs to be linked against libkinfo.
 case $host_os in
@@ -257,6 +264,31 @@ AC_CHECK_PROG(CLANG,clang,clang)
 AC_ARG_ENABLE(clang-rewrite-includes,
     AS_HELP_STRING([--enable-clang-rewrite-includes],
         [Use by default Clang's -frewrite-includes option.]))
+
+if test "$enable_clang_rewrite_includes" = "yes"; then
+    AC_DEFINE(HAVE_CLANG_REWRITE_INCLUDES, 1, [Define to 1 if clang supports -frewrite-includes])
+elif test "$enable_clang_rewrite_includes" = "no"; then
+    true  # do not enable
+else
+    if test -n "$CLANG"; then
+        AC_MSG_CHECKING([whether clang -Werror works for unknown options])
+        $CLANG -Werror -totallybogusoption -E - >/dev/null 2>/dev/null
+        if test $? -eq 0; then
+            AC_MSG_RESULT(no)
+            # can't detect if the option is supported, but that's too old clang anyway
+        else
+            AC_MSG_RESULT(yes)
+            AC_MSG_CHECKING([for clang -E -frewrite-includes])
+            $CLANG -Werror -E -frewrite-includes - >/dev/null 2>/dev/null
+            if test $? -eq 0; then
+                AC_MSG_RESULT(yes)
+                AC_DEFINE(HAVE_CLANG_REWRITE_INCLUDES, 1, [Define to 1 if clang supports -frewrite-includes])
+            else
+                AC_MSG_RESULT(no)
+            fi
+        fi
+    fi
+fi
 
 AC_ARG_ENABLE(clang-wrappers,
     AS_HELP_STRING([--enable-clang-wrappers],
@@ -306,6 +338,34 @@ else
     fi
 fi
 
+AC_ARG_ENABLE(gcc-fdirectives-only,
+    AS_HELP_STRING([--enable-gcc-fdirectives-only],
+        [Use by default GCC's -fdirectives-only option.]))
+
+if test "$enable_gcc_fdirectives_only" = "yes"; then
+    AC_DEFINE(HAVE_GCC_FDIRECTIVES_ONLY, 1, [Define to 1 if gcc supports -fdirectives-only])
+elif test "$enable_gcc_fdirectives_only" = "no"; then
+    true  # do not enable
+else
+    AC_CHECK_PROG(GCC_BIN,gcc,gcc)
+    AC_MSG_CHECKING([whether $GCC_BIN -Werror works for unknown options])
+    $GCC_BIN -Werror -totallybogusoption -E - >/dev/null 2>/dev/null
+    if test $? -eq 0; then
+        AC_MSG_RESULT(no)
+        # can't detect if the option is supported, but that's too old clang anyway
+    else
+        AC_MSG_RESULT(yes)
+        AC_MSG_CHECKING([for $GCC_BIN -E -fdirectives-only])
+        $GCC_BIN -Werror -E -fdirectives-only - >/dev/null 2>/dev/null
+        if test $? -eq 0; then
+            AC_MSG_RESULT(yes)
+            AC_DEFINE(HAVE_GCC_FDIRECTIVES_ONLY, 1, [Define to 1 if gcc supports -fdirectives-only])
+        else
+            AC_MSG_RESULT(no)
+        fi
+    fi
+fi
+
 AC_MSG_CHECKING([for -fsanitize= usage])
 if echo "$CXXFLAGS" | grep -q -- -fsanitize; then
     AC_DEFINE(SANITIZER_USED, 1, [Define to 1 if compiled with -fsanitize option(s)])
@@ -327,8 +387,7 @@ AC_CONFIG_FILES([ tests/Makefile ])
 AC_CONFIG_FILES([ unittests/Makefile ])
 AC_CONFIG_FILES([ client/icecc-create-env ])
 AC_CONFIG_FILES([ tests/test-setup.sh ])
-AC_CONFIG_FILES([ suse/icecream.spec ])
-AC_OUTPUT
+AC_OUTPUT([ suse/icecream.spec ])
 if test "$prefix" = NONE; then
   prefix=$ac_default_prefix
 fi

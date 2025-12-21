@@ -246,10 +246,10 @@ static UseCSMsg *get_server(MsgChannel *local_daemon)
         timeout = 60 * 60;
     Msg *umsg = local_daemon->get_msg( timeout );
 
-    if (!umsg || *umsg != Msg::USE_CS) {
-        log_warning() << "reply was not expected use_cs " << (umsg ? umsg->to_string() : Msg(Msg::UNKNOWN).to_string())  << endl;
+    if (!umsg || umsg->type != M_USE_CS) {
+        log_warning() << "reply was not expected use_cs " << (umsg ? (char)umsg->type : '0')  << endl;
         ostringstream unexpected_msg;
-        unexpected_msg << "Error 1 - expected use_cs reply, but got " << (umsg ? umsg->to_string() : Msg(Msg::UNKNOWN).to_string()) << " instead";
+        unexpected_msg << "Error 1 - expected use_cs reply, but got " << (umsg ? (char)umsg->type : '0') << " instead";
         delete umsg;
         throw client_error(1, unexpected_msg.str());
     }
@@ -260,7 +260,7 @@ static UseCSMsg *get_server(MsgChannel *local_daemon)
 
 static void check_for_failure(Msg *msg, MsgChannel *cserver)
 {
-    if (msg && *msg == Msg::STATUS_TEXT) {
+    if (msg && msg->type == M_STATUS_TEXT) {
         log_error() << "Remote status (compiled on " << cserver->name << "): "
                     << static_cast<StatusTextMsg*>(msg)->text << endl;
         throw client_error(23, "Error 23 - Remote status (compiled on " + cserver->name + ")\n" +
@@ -270,7 +270,7 @@ static void check_for_failure(Msg *msg, MsgChannel *cserver)
 
 // 'unlock_sending' = dcc_lock_host() is held when this is called, temporarily yield the lock
 // while doing network transfers
-static void write_fd_to_server(int fd, MsgChannel *cserver)
+static void write_fd_to_server(int fd, MsgChannel *cserver, bool unlock_sending = false)
 {
     unsigned char buffer[100000]; // some random but huge number
     off_t offset = 0;
@@ -300,6 +300,13 @@ static void write_fd_to_server(int fd, MsgChannel *cserver)
 
         if (!bytes || offset == sizeof(buffer)) {
             if (offset) {
+                // If write_fd_to_server() is called for sending preprocessed data,
+                // the dcc_lock_host() lock is held to limit the number cpp invocations
+                // to the cores available to prevent overload. But that would
+                // essentially also limit network transfers, so temporarily yield and
+                // reaquire again.
+                if(unlock_sending)
+                    dcc_unlock();
                 FileChunkMsg fcmsg(buffer, offset);
 
                 if (!cserver->send_msg(fcmsg)) {
@@ -316,6 +323,15 @@ static void write_fd_to_server(int fd, MsgChannel *cserver)
                 uncompressed += fcmsg.len;
                 compressed += fcmsg.compressed;
                 offset = 0;
+                if(unlock_sending)
+                {
+                    if(!dcc_lock_host())
+                    {
+                        log_error() << "can't reaquire lock for local cpp" << endl;
+                        close(fd);
+                        throw client_error(32, "Error 32 - lock failed");
+                    }
+                }
             }
 
             if (!bytes) {
@@ -361,11 +377,11 @@ static void receive_file(const string& output_file, MsgChannel* cserver)
 
         check_for_failure(msg, cserver);
 
-        if (*msg == Msg::END) {
+        if (msg->type == M_END) {
             break;
         }
 
-        if (*msg != Msg::FILE_CHUNK) {
+        if (msg->type != M_FILE_CHUNK) {
             unlink(tmp_file.c_str());
             delete msg;
             throw client_error(20, "Error 20 - unexpected message");
@@ -449,11 +465,6 @@ static int build_remote_int(CompileJob &job, UseCSMsg *usecs, MsgChannel *local_
 
             EnvTransferMsg msg(job.targetPlatform(), job.environmentVersion());
 
-            if (!dcc_lock_host()) {
-                log_error() << "can't lock for local cpp" << endl;
-                return EXIT_DISTCC_FAILED;
-            }
-
             if (!cserver->send_msg(msg)) {
                 throw client_error(6, "Error 6 - send environment to remote failed");
             }
@@ -471,9 +482,7 @@ static int build_remote_int(CompileJob &job, UseCSMsg *usecs, MsgChannel *local_
                 throw client_error(8, "Error 8 - write environment to remote failed");
             }
 
-            dcc_unlock();
-
-            if (IS_PROTOCOL_VERSION(31, cserver)) {
+            if (IS_PROTOCOL_31(cserver)) {
                 VerifyEnvMsg verifymsg(job.targetPlatform(), job.environmentVersion());
 
                 if (!cserver->send_msg(verifymsg)) {
@@ -482,7 +491,7 @@ static int build_remote_int(CompileJob &job, UseCSMsg *usecs, MsgChannel *local_
 
                 Msg *verify_msg = cserver->get_msg(60);
 
-                if (verify_msg && *verify_msg == Msg::VERIFY_ENV_RESULT) {
+                if (verify_msg && verify_msg->type == M_VERIFY_ENV_RESULT) {
                     if (!static_cast<VerifyEnvResultMsg*>(verify_msg)->ok) {
                         // The remote can't handle the environment at all (e.g. kernel too old),
                         // mark it as never to be used again for this environment.
@@ -506,21 +515,16 @@ static int build_remote_int(CompileJob &job, UseCSMsg *usecs, MsgChannel *local_
             }
         }
 
-        if (!IS_PROTOCOL_VERSION(31, cserver) && ignore_unverified()) {
+        if (!IS_PROTOCOL_31(cserver) && ignore_unverified()) {
             log_warning() << "Host " << hostname << " cannot be verified." << endl;
             throw client_error(26, "Error 26 - environment on " + hostname + " cannot be verified");
         }
 
         // Older remotes don't set properly -x argument.
         if(( job.language() == CompileJob::Lang_OBJC || job.language() == CompileJob::Lang_OBJCXX )
-            && !IS_PROTOCOL_VERSION(38, cserver)) {
+            && !IS_PROTOCOL_38(cserver)) {
             job.appendFlag( "-x", Arg_Remote );
             job.appendFlag( job.language() == CompileJob::Lang_OBJC ? "objective-c" : "objective-c++", Arg_Remote );
-        }
-
-        if (!dcc_lock_host()) {
-            log_error() << "can't lock for local cpp" << endl;
-            return EXIT_DISTCC_FAILED;
         }
 
         CompileFileMsg compile_file(&job);
@@ -542,6 +546,10 @@ static int build_remote_int(CompileJob &job, UseCSMsg *usecs, MsgChannel *local_
                 throw client_error(32, "Error 18 - (fork error?)");
             }
 
+            if (!dcc_lock_host()) {
+                log_error() << "can't lock for local cpp" << endl;
+                return EXIT_DISTCC_FAILED;
+            }
             HostUnlock hostUnlock; // automatic dcc_unlock()
 
             /* This will fork, and return the pid of the child.  It will not
@@ -555,7 +563,7 @@ static int build_remote_int(CompileJob &job, UseCSMsg *usecs, MsgChannel *local_
 
             try {
                 log_block bl2("write_fd_to_server from cpp");
-                write_fd_to_server(sockets[0], cserver);
+                write_fd_to_server(sockets[0], cserver, true /*yield lock*/);
             } catch (...) {
                 kill(cpp_pid, SIGTERM);
                 throw;
@@ -595,8 +603,6 @@ static int build_remote_int(CompileJob &job, UseCSMsg *usecs, MsgChannel *local_
             throw client_error(12, "Error 12 - failed to send file to remote");
         }
 
-        dcc_unlock();
-
         Msg *msg;
         {
             log_block wait_cs("wait for cs");
@@ -609,8 +615,8 @@ static int build_remote_int(CompileJob &job, UseCSMsg *usecs, MsgChannel *local_
 
         check_for_failure(msg, cserver);
 
-        if (*msg != Msg::COMPILE_RESULT) {
-            log_warning() << "waited for compile result, but got " << msg->to_string() << endl;
+        if (msg->type != M_COMPILE_RESULT) {
+            log_warning() << "waited for compile result, but got " << (char)msg->type << endl;
             delete msg;
             throw client_error(13, "Error 13 - did not get compile response message");
         }
@@ -670,7 +676,7 @@ static int build_remote_int(CompileJob &job, UseCSMsg *usecs, MsgChannel *local_
         // Handle pending status messages, if any.
         if(cserver) {
             while(Msg* msg = cserver->get_msg(0, true)) {
-                if(*msg == Msg::STATUS_TEXT)
+                if(msg->type == M_STATUS_TEXT)
                     log_error() << "Remote status (compiled on " << cserver->name << "): "
                                 << static_cast<StatusTextMsg*>(msg)->text << endl;
                 delete msg;

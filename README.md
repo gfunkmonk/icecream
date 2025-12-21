@@ -1,10 +1,12 @@
 [![Build Status (Linux & macOS)](https://travis-ci.org/icecc/icecream.svg?branch=master)](https://travis-ci.org/icecc/icecream)
 [![Build Status (FreeBSD)](https://api.cirrus-ci.com/github/icecc/icecream.svg)](https://cirrus-ci.com/github/icecc/icecream)
 [![Codacy Badge](https://api.codacy.com/project/badge/Grade/d0fd9ba53b424b37964340970392eec2)](https://www.codacy.com/app/icecc/icecream?utm_source=github.com&amp;utm_medium=referral&amp;utm_content=icecc/icecream&amp;utm_campaign=Badge_Grade)
+[![Code Quality: Cpp](https://img.shields.io/lgtm/grade/cpp/g/icecc/icecream.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/icecc/icecream/context:cpp)
+[![Total Alerts](https://img.shields.io/lgtm/alerts/g/icecc/icecream.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/icecc/icecream/alerts)
 
 [Icecream](Icecream) was created by SUSE based on distcc. Like distcc,
 [Icecream](Icecream) takes compile jobs from a build and
-distributes them among remote machines allowing a parallel build. But
+distributes it among remote machines allowing a parallel build. But
 unlike distcc, [Icecream](Icecream) uses a central server that
 dynamically schedules the compile jobs to the fastest free server. This
 advantage pays off mostly for shared computers, if you're the only user
@@ -20,8 +22,8 @@ Table of Contents
     -   [Firewall](#firewall)
     -   [C compiler](#c-compiler)
     -   [osc build](#osc-build)
-    -   [some compilation nodes aren't
-        used](#some-compilation-nodes-arent-used)
+    -   [some compilation node aren't
+        used](#some-compilation-node-arent-used)
     -   [build with -Werror fails only when using icecream ](#build-with--werror-fails-only-when-using-icecream)
     -   [clang 4.0 tries to read /proc/cpuinfo and fails](#clang-tries-to-read-proccpuinfo-and-fails)
 
@@ -60,7 +62,7 @@ fit better into the way your system is configured.
 We highly recommend you install [icemon](https://github.com/icecc/icemon) or
 [icecream-sundae](https://github.com/JPEWdev/icecream-sundae) with icecream.
 
-If you want to install from source see the instructions in the README file
+If you want to install from source see the instructions in the README file 
 provided in the source package.
 
 How to use icecream
@@ -81,7 +83,7 @@ first entry in your path, e.g. type
      export PATH=/usr/lib/icecc/bin:$PATH
 
 (Hint: put this in `~/.bashrc` or `/etc/profile` to not have to type it in
-everytime.)
+everytime)
 
 Then you just compile with make -j \<num\>, where
 \<num\> is the amount of jobs you want to compile in parallel.
@@ -106,12 +108,12 @@ funny stats, you might want to run "icemon" (from a separate repository/package)
 
 If you restart a computer, you still want it to be in the icecream
 cluster after reboot. Consult your distribution's documentation on this. If you
-use packages provided by your distribution this should be automatic (or a
-simple configuration change).
+uses packages provided by your distribution this should be automatic (or a 
+simple configuration change)
 
 ### make scheduler persistent:
 
-By adding options --scheduler-host for daemon and --persistent-client-connection for scheduler, the client connections are not disconnected from the scheduler even if there is an availability of better scheduler.
+By adding an option --scheduler-host for daemon and --persistent-client-connection for scheduler, the client connections are not disconnected from the scheduler even there is an availability of better scheduler.
 
 TroubleShooting
 -------------------------------------------------------------------------------
@@ -129,16 +131,16 @@ To open the right ports in your firewall, call
 
      yast2 firewall
 
-Choose "allowed services" -\> Advanced. Enter for TCP **10245 8765
-8766** and for UDP **8765**.
+Choose "allowed services" -\> Advanced. Enter for TCP: **10245 8765
+8766** and for UDP **8765**
 
-If you have the scheduler running on another system, you should open
-broadcasting response:
+If you have scheduler running on another system, you should open
+broadcasting response :
 
      yast2 firewall
 
-Choose "Custom Rules" -\> Add. Enter Source Network **0/0**, Protocol
-**UDP**, Source Port **8765**.
+Choose "Custom Rules" -\> Add. Enter Source Network **0/0** Protocol:
+**UDP** Source Port **8765**
 
 ### C compiler
 
@@ -150,31 +152,31 @@ c++) start your compile using
 
 and wait for a typical compile command to appear, like this one:
 
-     cd /root/kdepim/kode/libkode && /usr/lib/icecc/bin/c++  -DTest1Area=5121 -D_BSD_SOURCE
-     -D_XOPEN_SOURCE=500 -D_BSD_SOURCE -DQT_NO_STL
-     -DQT_NO_CAST_TO_ASCII -D_REENTRANT -DKDE_DEPRECATED_WARNINGS
+     cd /root/kdepim/kode/libkode && /usr/lib/icecc/bin/c++  -DTest1Area=5121 -D_BSD_SOURCE 
+     -D_XOPEN_SOURCE=500 -D_BSD_SOURCE -DQT_NO_STL 
+     -DQT_NO_CAST_TO_ASCII -D_REENTRANT -DKDE_DEPRECATED_WARNINGS 
      -DKDE_DEFAULT_DEBUG_AREA=5295 -DMAKE_KODE_LIB -Wnon-
-     virtual-dtor -Wno-long-long -ansi -Wundef -Wcast-align
-     -Wchar-subscripts-Wall -W -Wpointer-arith -Wformat-security
+     virtual-dtor -Wno-long-long -ansi -Wundef -Wcast-align 
+     -Wchar-subscripts-Wall -W -Wpointer-arith -Wformat-security 
      -fno-exceptions -fno-check-new
 
-In this example, the right c compiler is chosen, /usr/lib/icecc/bin/c++.
+in this example, the right c compiler is chosen, /usr/lib/icecc/bin/c++.
 If the wrong one is chosen, delete CMakeCache.txt (if existing) and
 start the build process again calling ./configure (if existing).
 
 ### osc build
 
-You can tell osc build to use icecream to build packages by appending
---icecream=\<n\> where n is the number of processes which should be
+You can tell osc build to use icecream to build packages, by appending
+--icecream=\<n\> where n is the number of process which should be
 started in parallel. However, for integration with icecream to work
 properly, you must install icecream on the host where you will run "osc
 build" and you must start icecream daemon.
 
-### some compilation nodes aren't used
+### some compilation node aren't used
 
 If, when using icecream monitor (icemon), you notice some nodes not
 being used at all for compilation, check you have the same icecream
-version on all nodes, otherwise, nodes running older icecream versions
+version on all nodes, otherwise, nodes running older icecream version
 might be excluded from available nodes.
 
 ### build with -Werror fails only when using icecream
@@ -184,7 +186,7 @@ using `ICECC_REMOTE_CPP=1` (see `icecc --help`).
 
 ### clang tries to read /proc/cpuinfo and fails
 
-This is a problem of clang 4.0 and newer: <https://bugs.llvm.org/show_bug.cgi?id=33008>.
+This is a problem of clang 4.0 and newer: https://bugs.llvm.org/show_bug.cgi?id=33008 
 The most recent Icecream version works around this problem.
 
 Supported platforms
@@ -306,7 +308,7 @@ Create symbolic links from where icecc is to the name of your cross
 compilers (e.g. arm-linux-g++ and arm-linux-gcc), make sure that these
 symbolic links are in the path and before the path of your toolchain,
 with $ICECC\_CC and $ICECC\_CXX you need to tell icecream which
-compilers to use for preprocessing and local compiling, e.g. set it to
+compilers to use for preprocessing and local compiling. e.g. set it to
 ICECC\_CC=arm-linux-gcc and ICECC\_CXX=arm-linux-g++.
 
 As the next step you need to create a .tar.bz2 of your cross compiler,
@@ -344,14 +346,14 @@ for the same host architecture:
     icecream. icecc-create-env script can be used to
     create the tarball file for each toolchain, for example:
 
-     - `icecc-create-env /work/toolchain1/bin/arm-eabi-gcc`
-     - `icecc-create-env /work/toolchain2/bin/arm-linux-androideabi-gcc`
+    icecc-create-env /work/toolchain1/bin/arm-eabi-gcc
+    icecc-create-env /work/toolchain2/bin/arm-linux-androideabi-gcc
 
 -   Set ICECC\_VERSION to point to the native tarball file and for each
     tarball file created to the toolchains (e.g  ICECC\_VERSION=/work/i386-native.tar.gz,/work/arm-eabi-toolchain1.tar.gz=arm-eabi,/work/arm-linux-androideabi-toolchain2.tar.gz=arm-linux-androideabi).
 
-With these steps the icecream will use /work/arm-eabi-toolchain1.tar.gz file to
-cross compilers with the prefix arm-eabi (e.g arm-eabi-gcc and arm-eabi-g++), use
+With these steps the icecrem will use /work/arm-eabi-toolchain1.tar.gz file to
+cross compilers with the prefix arm-eabi(e.g arm-eabi-gcc and arm-eabi-g++), use
 /work/arm-linux-androideabi-toolchain2.tar.gz file to cross compilers with the prefix
 arm-linux-androideabi(e.g. arm-linux-androideabi-gcc and arm-linux-androideabi-g++)
 and use /work/i386-native.tar.gz file to compilers without prefix,
@@ -381,8 +383,8 @@ And then compile with
 
      export PATH=/opt/ccache/bin:$PATH
 
-In this case icecc's symlinks in /usr/lib/icecc/bin should **not** be
-in your path, as CCACHE_PREFIX is instructing ccache to explicitly delegate
+In this case icecc's symlinks in /usr/lib/icecc/bin should **not** be 
+in your path, as CCACHE_PREFIX is instructing ccache to explicitly delegate 
 to icecc rather than finding it in the path. If both ccache and icecc's
 symlinks are in the path it is likely the two wrappers will mistake each
 other for the real compiler and icecc will complain that it has recursively
@@ -446,7 +448,7 @@ What is the best environment for icecream
 
 In most requirements icecream isn't special, e.g. it doesn't matter what
 distributed compile system you use, you won't have fun if your nodes are
-connected through less than or equal to 10MBit. Note that icecream
+connected through than less or equal to 10MBit. Note that icecream
 compresses input and output files (using lzo), so you can calculate with
 ~1MBit per compile job - i.e more than make -j10 won't be possible
 without delays.
@@ -462,7 +464,7 @@ The scheduler will try to give you the fastest machines available, so
 even if you add old machines, they will be used only in exceptional
 situations, but still you can have bad luck - the scheduler doesn't know
 how long a job will take before it started. So if you have 3 machines
-and two quick to compile and one long to compile source files, you're not
+and two quick to compile and one long to compile source file, you're not
 safe from a choice where everyone has to wait on the slow machine. Keep
 that in mind.
 
@@ -472,20 +474,14 @@ earth, when those users were isolated to their geographic location the speed
 improved for everyone. In most corporate environments within a single building
 everything works well, but between two buildings often is troublesome.
 
-If you plan to use Icecream in the cloud or anywhere else you would have more
-latency than a corporate LAN, you should strongly consider using a dedicated
-scheduler configured with one of the alternative scheduling algorithms. See[Some advice on configuration](#some-advice-on-configuration)
-for details on alternative scheduling algorithms. You should also consider
-using dedicated compile servers as well if at all practical.
-
 Some advice on configuration
 -----------------------------------------------------------------------------------------------------------------------------------
 
 Icecream supports many configurations but you need to understand your network to
-choose what is right for you.
+choose what is right for you. 
 
-You should ensure that the scheduler is up to the latest version. Many new features
-require the client and the scheduler to work together to use them. Even though clients
+You should ensure that the scheduler up to the latest version. Many new features
+require the client and scheduler work together to use them. Even though clients
 should work with old schedulers new features will not work, and may not be disabled
 correctly.
 
@@ -495,14 +491,14 @@ this, and it is random if they will find the correct one. In all other ways it i
 believed that mixing old and new versions of the daemon will work: if you use a new
 feature only new clients will be used.
 
-Recommended is to start the scheduler and daemon on everybody's machine. The
+Recommended is to start the scheduler and daemon on every body's machine. The
 icecream schedulers will choose one to be the master and everyone will connect
 to it. When the scheduler machine goes down a new master will be selected automatically.
 
 If you need to run mixed icecream versions, then it is best to designate one
 machine on each subnet to be a scheduler. Icecream nodes will automatically find
 the scheduler and connect to it. If someone accidentally starts a second
-scheduler this will cause problems with clients that are older than version 1.1, but they
+scheduler this will cause problems with clients that are less than 1.1, but they
 should eventually work. The scheduler should be a reliable machine, but if it
 fails you use any existing machine as a replacement.
 
@@ -517,34 +513,12 @@ overload routers.
 
 You might designate a netname. This is useful if your network is using VPN to
 make it seem like developers who are physically a long distance apart seem like
-they are on the same sub-net. While the VPNs are useful, they typically do
+they are on the same sub-net. While the VPNs are useful, they are typically do
 not have enough bandwidth for icecream, so by setting a different netname on
 each side of the VPN you can save bandwidth. Netnames can be used to work around
 some limitations above: if a netname is set icecream schedulers and daemons will
 ignore the existence of other schedulers and daemons.
 
-Finally, you can configure the scheduler to use a different job scheduling
-algorithm to distribute the load across your compile servers. The default
-scheduling algorithm is "fastest"; however this may not actually be the
-fastest algorithm to complete a full build in the real world, so you
-should try multiple algorithms to find the best for your environment.
-
-Currently, you can choose from the following algorithms:
-* *random*: distribute jobs randomly across the network.
-* *round_robin*: schedule jobs on the host that has seen jobs least recently.
-  This scheduler tends to distribute job assignments evenly across the
-  network, but it may distribute actual load unevenly and works best for
-  homogeneous networks of dedicated compile servers.
-* *least_busy*: schedule jobs to the host with the highest percentage of
-  open job slots. This scheduler tends to distribute load evenly, but tasks may be
-  distributed unevenly and works best for heterogeneous networks of dedicated
-  compile servers.
-* *fastest*: schedule jobs on the host expected to complete it soonest. This
-  tends to favor using a few hosts in the network, though a portion of the
-  load will be allocated to new hosts and hosts that have not been used in
-  some time to build up statistics. This is the classic algorithm and is
-  suitable for relatively small and heterogeneous networks of compile
-  servers.
 
 Network setup for Icecream (firewalls)
 ---------------------------------------------------------------------------------------------------------------------------
@@ -574,8 +548,8 @@ best choice:
     your compilation (see the ICECC\_VERSION support)
 -   you got some neat PPC laptop and want to use your wife's computer
     that only runs intel (see the cross compiler section)
--   you don't know what machines will be on-line at compile time
--   **most important**: you're sitting in an office with several
+-   you don't know what machines will be on-line at compile time.
+-   **most important**: you're sitting in a office with several
     co-workers that do not like if you overload their workstations when
     they play doom (distcc doesn't have a scheduler)
 -   you like nice compile monitors :)

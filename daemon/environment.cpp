@@ -418,7 +418,7 @@ pid_t start_install_environment(const std::string &basename, const std::string &
     string dirname = basename + "/target=" + target;
     Msg *msg = c->get_msg(30);
 
-    if (!msg || *msg != Msg::FILE_CHUNK) {
+    if (!msg || msg->type != M_FILE_CHUNK) {
         trace() << "Expected first file chunk\n";
         return 0;
     }
@@ -660,7 +660,7 @@ void remove_native_environment_files(const string &env)
 static void
 error_client(MsgChannel *client, string error)
 {
-    if (IS_PROTOCOL_VERSION(23, client)) {
+    if (IS_PROTOCOL_23(client)) {
         client->send_msg(StatusTextMsg(error));
     }
 }

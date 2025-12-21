@@ -39,7 +39,7 @@
 #include <sys/time.h>
 #include <sys/types.h>
 #include <unistd.h>
-#include <fcntl.h>
+#include <sys/fcntl.h>
 #include <sys/wait.h>
 #include <signal.h>
 #include <sys/resource.h>
@@ -85,7 +85,7 @@ extern "C" {
 static void
 error_client(MsgChannel *client, string error)
 {
-    if (IS_PROTOCOL_VERSION(23, client)) {
+    if (IS_PROTOCOL_23(client)) {
         client->send_msg(StatusTextMsg(error));
     }
 }
@@ -105,7 +105,7 @@ int work_it(CompileJob &j, unsigned int job_stat[], MsgChannel *client, CompileR
 
     std::list<string> list = j.nonLocalFlags();
 
-    if (!IS_PROTOCOL_VERSION(41, client) && j.dwarfFissionEnabled()) {
+    if (!IS_PROTOCOL_41(client) && j.dwarfFissionEnabled()) {
         list.push_back("-gsplit-dwarf");
     }
 
@@ -222,7 +222,7 @@ int work_it(CompileJob &j, unsigned int job_stat[], MsgChannel *client, CompileR
         int i = 0;
         bool clang = false;
 
-        if (IS_PROTOCOL_VERSION(30, client)) {
+        if (IS_PROTOCOL_30(client)) {
             assert(!j.compilerName().empty());
             clang = (j.compilerName().find("clang") != string::npos);
             argv[i++] = strdup(("/usr/bin/" + j.compilerName()).c_str());
@@ -449,7 +449,7 @@ int work_it(CompileJob &j, unsigned int job_stat[], MsgChannel *client, CompileR
                     fcmsg = nullptr;
                     delete msg;
                 } else {
-                    if (*msg == Msg::END) {
+                    if (msg->type == M_END) {
                         input_complete = true;
 
                         if (!fcmsg && sock_in[1] != -1) {
@@ -460,7 +460,7 @@ int work_it(CompileJob &j, unsigned int job_stat[], MsgChannel *client, CompileR
                         }
 
                         delete msg;
-                    } else if (*msg == Msg::FILE_CHUNK) {
+                    } else if (msg->type == M_FILE_CHUNK) {
                         fcmsg = static_cast<FileChunkMsg*>(msg);
                         off = 0;
 
