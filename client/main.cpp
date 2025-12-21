@@ -98,8 +98,15 @@ static void dcc_show_usage()
         "   ICECC_COLOR_DIAGNOSTICS    set to 1 or 0 to override color diagnostics support.\n"
         "   ICECC_CARET_WORKAROUND     set to 1 or 0 to override gcc show caret workaround.\n"
         "   ICECC_COMPRESSION          if set, the libzstd compression level (1 to 19, default: 1)\n"
-        "   ICECC_ENV_COMPRESSION      compression type for icecc environments [none|gzip|bzip2|zstd|xz]\n"
+        "   ICECC_ENV_COMPRESSION      compression type for icecc environments [none|gzip|bzip2|zstd|xz|gzip]\n"
         "   ICECC_SLOW_NETWORK         set to 1 to send network data in smaller chunks\n"
+        "   ICECC_SOCKET_PATH          custom daemon socket path (overrides all defaults)\n"
+        "   ICECC_SOCKET_PATH1         first fallback socket path (default: /var/run/icecc/iceccd.socket)\n"
+        "   ICECC_SOCKET_PATH2         second fallback socket path (default: /var/run/iceccd.socket)\n"
+        "   ICECC_DAEMON_HOST          daemon TCP host (default: 127.0.0.1)\n"
+        "   ICECC_DAEMON_PORT          daemon TCP port (default: 10245)\n"
+        "   ICECC_BUILD_ROOT           set to root where extra files are located, used to strip the path up\n"
+        "                              to the actual worktree.\n"
         );
 }
 
@@ -202,10 +209,22 @@ static MsgChannel* get_local_daemon()
     MsgChannel* local_daemon;
     if (getenv("ICECC_TEST_SOCKET") == nullptr) {
         /* try several options to reach the local daemon - 3 sockets, one TCP */
-        local_daemon = Service::createChannel("/var/run/icecc/iceccd.socket");
+
+        // Check for custom socket path first
+        if (const char* custom_socket = getenv("ICECC_SOCKET_PATH")) {
+            local_daemon = Service::createChannel(custom_socket);
+            if (local_daemon) {
+                return local_daemon;
+            }
+        }
+
+        // Default socket paths
+        const char* socket1 = getenv("ICECC_SOCKET_PATH1");
+        local_daemon = Service::createChannel(socket1 ? socket1 : "/var/run/icecc/iceccd.socket");
 
         if (!local_daemon) {
-            local_daemon = Service::createChannel("/var/run/iceccd.socket");
+            const char* socket2 = getenv("ICECC_SOCKET_PATH2");
+            local_daemon = Service::createChannel(socket2 ? socket2 : "/var/run/iceccd.socket");
         }
 
         if (!local_daemon && getenv("HOME")) {
@@ -215,7 +234,10 @@ static MsgChannel* get_local_daemon()
         }
 
         if (!local_daemon) {
-            local_daemon = Service::createChannel("127.0.0.1", 10245, 0/*timeout*/);
+            const char* tcp_host = getenv("ICECC_DAEMON_HOST");
+            const char* tcp_port_env = getenv("ICECC_DAEMON_PORT");
+            int tcp_port = tcp_port_env ? atoi(tcp_port_env) : 10245;
+            local_daemon = Service::createChannel(tcp_host ? tcp_host : "127.0.0.1", tcp_port, 0/*timeout*/);
         }
     } else {
         local_daemon = Service::createChannel(getenv("ICECC_TEST_SOCKET"));
@@ -587,9 +609,10 @@ int main(int argc, char **argv)
 
         /* Inform the daemon that we like to start a job.  */
         if (local_daemon->send_msg(JobLocalBeginMsg(0, get_absfilename(job.outputFile())))) {
-            /* Now wait until the daemon gives us the start signal.  40 minutes
-               should be enough for all normal compile or link jobs.  */
-            startme = local_daemon->get_msg(40 * 60);
+            // Now wait until the daemon gives us the start signal. This can take a while on 
+            // big projects with many scheduled linker jobs waiting to run locally. So use a 
+            // large timeout of 120 minutes.
+            startme = local_daemon->get_msg(120 * 60);
         }
 
         /* If we can't talk to the daemon anymore we need to fall back

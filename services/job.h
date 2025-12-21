@@ -42,6 +42,11 @@ public:
     }
 };
 
+class FlagsUpdater {
+public:
+    virtual std::string operator()(const std::string& arg, Argument_Type type) const = 0;
+};
+
 class CompileJob
 {
 public:
@@ -202,6 +207,8 @@ public:
     {
         return m_block_rewrite_includes;
     }
+
+    void updateFlags(const FlagsUpdater& updater);
 
 private:
     std::list<std::string> flags(Argument_Type argumentType) const;

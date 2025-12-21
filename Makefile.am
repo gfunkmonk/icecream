@@ -1,7 +1,6 @@
 EXTRA_DIST = README.md
 
 ACLOCAL_AMFLAGS = -I m4
-AM_LIBTOOLFLAGS = --silent
 
 SUBDIRS = \
 	services \

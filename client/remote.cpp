@@ -71,6 +71,64 @@ struct CharBufferDeleter {
     }
 };
 
+const std::vector<std::string> file_flag_prefixes {
+    "--warning-suppression-mappings=",
+    "-fprofile-sample-use=",
+    "-fprofile-use=",
+    "-fsanitize-blacklist=",
+    "-fsanitize-coverage-allowlist=",
+    "-fsanitize-ignorelist=",
+};
+
+const char remote_root[] = "/icecc-extrafiles/";
+
+class RebasePathFlagsUpdater : public FlagsUpdater {
+public:
+    RebasePathFlagsUpdater() {
+        const char* icecc_build_root = getenv("ICECC_BUILD_ROOT");
+        if (!icecc_build_root)
+            return;
+        char* path = realpath(icecc_build_root, nullptr);
+        if (!path) {
+            log_error() << "Can't resolve ICECC_BUILD_ROOT: " << icecc_build_root << std::endl;
+            return;
+        }
+        build_root_ = path;
+        build_root_ += '/';
+        free(path);
+    }
+
+    std::string operator()(const std::string& arg, Argument_Type type) const override {
+        if (build_root_.empty() || type == Arg_Local)
+            return arg;
+
+        for (const std::string& prefix : file_flag_prefixes) {
+            if (arg.substr(0, prefix.size()) == prefix) {
+                struct stat st;
+                if (stat(arg.c_str() + prefix.size(), &st)) {
+                    log_error() << "cannot stat " << (arg.c_str() + prefix.size()) << std::endl;
+                    break;
+                }
+                char* path = realpath(arg.c_str() + prefix.size(), nullptr);
+                if (!path)
+                    break;
+                if (strncmp(path, build_root_.c_str(), build_root_.size())) {
+                    free(path);
+                    break;
+                }
+                std::string rebased_arg = prefix + remote_root + (path + build_root_.size());
+                free(path);
+                log_info() << "rebased_arg: " << rebased_arg << std::endl;
+                return rebased_arg;
+            }
+        }
+        return arg;
+    }
+
+private:
+    std::string build_root_;
+};
+
 }
 
 using namespace std;
@@ -247,9 +305,17 @@ static UseCSMsg *get_server(MsgChannel *local_daemon)
     Msg *umsg = local_daemon->get_msg( timeout );
 
     if (!umsg || umsg->type != M_USE_CS) {
-        log_warning() << "reply was not expected use_cs " << (umsg ? (char)umsg->type : '0')  << endl;
+        //log_warning() << "reply was not expected use_cs " << (umsg ? (char)umsg->type : '0')  << endl;
         ostringstream unexpected_msg;
-        unexpected_msg << "Error 1 - expected use_cs reply, but got " << (umsg ? (char)umsg->type : '0') << " instead";
+        //unexpected_msg << "Error 1 - expected use_cs reply, but got " << (umsg ? (char)umsg->type : '0') << " instead";
+        if (!umsg) {
+            log_warning() << "reply timeout " << timeout << endl;
+            unexpected_msg << "Error 1 - reply timeout " << timeout;
+        }
+        else {
+            log_warning() << "reply was not expected use_cs " << (umsg ? (char)umsg->type : '0')  << endl;
+            unexpected_msg << "Error 1 - expected use_cs reply, but got " << (umsg ? (char)umsg->type : '0') << " instead";
+        }
         delete umsg;
         throw client_error(1, unexpected_msg.str());
     }
@@ -415,7 +481,8 @@ static void receive_file(const string& output_file, MsgChannel* cserver)
 
     }
     if(rename(tmp_file.c_str(), output_file.c_str()) != 0) {
-        log_perror("Failed to rename temporary file: ");
+        //log_perror("Failed to rename temporary file: ");
+        log_perror("Failed to rename temporary file: ") << '\t' << tmp_file << endl;
         if(unlink(tmp_file.c_str()) != 0)
         {
             log_perror("delete temporary file - might be related to rename failure above");
@@ -527,7 +594,10 @@ static int build_remote_int(CompileJob &job, UseCSMsg *usecs, MsgChannel *local_
             job.appendFlag( job.language() == CompileJob::Lang_OBJC ? "objective-c" : "objective-c++", Arg_Remote );
         }
 
-        CompileFileMsg compile_file(&job);
+        CompileJob remote_job = job;
+        RebasePathFlagsUpdater flags_updater;
+        remote_job.updateFlags(flags_updater);
+        CompileFileMsg compile_file(&remote_job);
         {
             log_block b("send compile_file");
 

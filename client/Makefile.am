@@ -30,8 +30,6 @@ AM_CPPFLAGS = \
 
 EXTRA_DIST = $(bin_SCRIPTS)
 
-AM_LIBTOOLFLAGS = --silent
-
 install-exec-local:
 	$(mkinstalldirs) $(DESTDIR)$(bindir)
 	rm -f $(DESTDIR)$(bindir)/icerun

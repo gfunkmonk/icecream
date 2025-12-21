@@ -347,6 +347,14 @@ bool analyse_argv(const char * const *argv, CompileJob &job, bool icerun, list<s
                 args.append(a, Arg_Local);
                 /* These two generate dependencies as a side effect.  They
                  * should work with the way we call cpp. */
+                if (str_startswith("-Wp,-MD", a) || str_startswith("-Wp,-MMD", a)) {
+                    /* When -Wp,-MD or -Wp,-MMD includes a filename */
+                    const char* comma = strchr(a + 7, ',');
+                    if (comma != nullptr) {
+                        seen_mf = true;
+                        /* we saw the filename so don't add additional -MF */
+                    }
+                }
             } else if (!strcmp(a, "-MG") || !strcmp(a, "-MP")) {
                 args.append(a, Arg_Local);
                 /* These just modify the behaviour of other -M* options and do
@@ -438,8 +446,8 @@ bool analyse_argv(const char * const *argv, CompileJob &job, bool icerun, list<s
                        || !strcmp(a, "-frepo")
                        || !strcmp(a, "-fprofile-generate")
                        || !strcmp(a, "-fprofile-use")
-                       || !strcmp(a, "-save-temps")
-                       || !strcmp(a, "--save-temps")
+                       || !strcmp("-save-temps", a)
+                       || !strcmp("--save-temps", a)
                        || str_startswith(a, "-save-temps=")
                        || str_startswith(a, "--save-temps=")
                        || !strcmp(a, "-fbranch-probabilities")) {
@@ -686,6 +694,9 @@ bool analyse_argv(const char * const *argv, CompileJob &job, bool icerun, list<s
                 }
             } else if (str_startswith("--target=", a)) {
                 seen_target = true;
+                args.append(a, Arg_Rest);
+            } else if (str_startswith("-std=", a)) {
+                standard = a + strlen("-std=");
                 args.append(a, Arg_Rest);
             } else if (str_equal("-Wunused-macros", a)
                        || str_equal("-Werror=unused-macros", a)) {

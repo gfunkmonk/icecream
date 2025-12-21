@@ -16,6 +16,12 @@ case $(uname) in
     "Linux") is_linux=1;;
 esac
 
+# Make sed expression for rebasing paths inside ICECC_BUILD_ROOT if set.
+transform="s/.*/&/"
+if test -d "$ICECC_BUILD_ROOT"; then
+    transform="s/^$(realpath --relative-base=/ $ICECC_BUILD_ROOT|sed 's/\//\\\//g')/icecc-extrafiles/"
+fi
+
 usage ()
 {
     echo "Create compiler environment for distributed build."
@@ -23,7 +29,7 @@ usage ()
     echo "For GCC, pass the the gcc binary, the matching g++ will be used automatically."
     echo "For Clang, pass the clang binary."
     echo "Use --addfile <file> to add extra files."
-    echo "Use --compression <type> to set tarball type (none,gzip,bzip2,zstd,xz)."
+    echo "Use --compression <type> to set tarball type (none,gzip,bzip2,zstd,xz,pigz)."
     echo "For backwards compatibility, the following is also supported:"
     echo "$0 --gcc <gcc_path> <g++_path>"
     echo "$0 --clang <clang_path>"
@@ -61,6 +67,12 @@ abs_path()
         popd > /dev/null 2>&1
     fi
     echo $path
+}
+
+# Returns remote path which will be rebased into /icecc-extrafiles if file is inside ICECC_BUILD_ROOT
+remote_path()
+{
+    echo $(echo "$1"|sed "$transform")
 }
 
 # return abs path to filedir with symlinks resolved
@@ -413,6 +425,10 @@ while test -n "$1"; do
                     compress_args="-T0 -0"
                 fi
                 ;;
+            pigz)
+                compress_ext=.gz
+                compress_program=pigz
+                ;;
             *)
                 echo "Unknown compression type '$1'."
                 exit 1
@@ -526,6 +542,12 @@ if test -f /etc/ld.so.conf; then
     echo "$directive $path"
   done </etc/ld.so.conf >$tmp_ld_so_conf
   add_file $tmp_ld_so_conf /etc/ld.so.conf
+  # populate ld.so.conf.d if it exists
+  if test -d /etc/ld.so.conf.d; then
+    for file in /etc/ld.so.conf.d/*; do
+      add_file "$file"
+    done
+  fi
 fi
 
 new_target_files=
@@ -570,18 +592,24 @@ for file in /usr/bin/md5sum /bin/md5 /usr/bin/md5 /sbin/md5; do
    fi
 done
 
-# now sort the files in order to make the md5sums independent
+# now sort the files in remote path order to make the md5sums independent
 # of ordering
-target_files=$(for i in $new_target_files; do echo $i; done | sort)
-md5=$(for i in $target_files; do $md5sum $tempdir/$i; done | sed -e "s# $tempdir##" | $md5sum | sed -e 's/ .*$//') || {
-  echo "Couldn't compute MD5 sum."
-  exit 2
-}
+remote_order_files=$(for i in $new_target_files; do echo $(remote_path $i)\$$i; done | sort)
+content=
+target_files=
+for i in $remote_order_files; do
+    remote_file=$(echo "$i" | cut -d'$' -f1)
+    target_file=$(echo "$i" | cut -d'$' -f2)
+    target_files+="$target_file "
+    content+=$remote_file$(cat $tempdir/$target_file | $md5sum)
+done
+
+md5=$(echo $content | $md5sum | sed -e 's/ .*$//')
 
 echo "creating $md5.tar$compress_ext"
 mydir=$(pwd)
 cd $tempdir
-tar -ch --numeric-owner -f - $target_files | "$compress_program" $compress_args > "$md5".tar"$compress_ext" || {
+tar -ch --numeric-owner --transform="$transform" -f - $target_files | "$compress_program" $compress_args > "$md5".tar"$compress_ext" || {
   echo "Couldn't create archive"
   exit 3
 }

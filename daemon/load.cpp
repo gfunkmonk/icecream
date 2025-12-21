@@ -272,6 +272,11 @@ static unsigned int calculateMemLoad(unsigned long int &NetMemFree)
         }
     }
 #endif
+    /* Bytes -> Kbytes */
+    MemFree /= 1024;
+    MemTotal /= 1024;
+    Buffers /= 1024;
+    Cached /= 1024;
 
 #elif defined( USE_SYSCTL )
     size_t len = sizeof(MemFree);

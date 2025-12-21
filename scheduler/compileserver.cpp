@@ -162,7 +162,8 @@ int CompileServer::maxPreloadCount() const
     // with multiple cores are capable of handling many jobs at once,
     // allow one extra preload job for each 4 cores, to minimize stalls
     // when the compile server is waiting for more jobs to be received.
-    return 1 + (m_maxJobs / 4);
+    //return 1 + (m_maxJobs / 4);
+    return m_maxJobs;
 }
 
 bool CompileServer::is_eligible_ever(const Job *job) const

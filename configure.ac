@@ -10,7 +10,7 @@ AC_PREREQ([2.63])
 # Pre-release versions: x.y.z, where z = 90 + X in rcX (1.1rc1 = 1.1.91)
 m4_define([icecream_version_major],[1])
 m4_define([icecream_version_minor],[4])
-m4_define([icecream_version_micro],[0])
+m4_define([icecream_version_micro],[1])
 m4_ifnblank(icecream_version_micro,
         [m4_define([icecream_version],[icecream_version_major.icecream_version_minor.icecream_version_micro])],
         [m4_define([icecream_version],[icecream_version_major.icecream_version_minor])])
@@ -30,9 +30,10 @@ AC_LANG([C++])
 # ===========================
 AC_PROG_CC
 AC_PROG_CXX
+AC_PROG_SED
 
-AC_MSG_CHECKING([for C++11 support (-std=c++11)])
-CXXFLAGS="$CXXFLAGS -std=c++11"
+AC_MSG_CHECKING([for C++17 support (-std=c++17)])
+CXXFLAGS="$CXXFLAGS -std=c++17"
 AC_TRY_COMPILE(
     [
         constexpr int get_const() { return 5; }
@@ -112,13 +113,17 @@ AC_ARG_WITH(man,
 )
 AS_IF([test "x$with_man" != "xno"], [
     build_man=yes
-    AC_PATH_PROGS(DOCBOOK2X,
-        [docbook2x-man db2x_docbook2man docbook-to-man docbook2man.pl docbook2man])
-    AS_IF([test -z "$DOCBOOK2X"], [
-        AC_MSG_WARN([docbook2x is missing. Install docbook2x package.])
-        DOCBOOK2X='echo docbook2x is missing. Install docbook2x package.'])
+    AC_PATH_PROGS(ASCIIDOC, [asciidoc])
+    AS_IF([test -z "$ASCIIDOC"], [
+        AC_MSG_WARN([asciidoc is missing. Install asciidoc package.])
+        ASCIIDOC='echo asciidoc is missing. Install asciidoc package.'])
+    AC_PATH_PROGS(A2X, [a2x])
+    AS_IF([test -z "$A2X"], [
+        AC_MSG_WARN([a2x is missing. Install a2x package.])
+        A2X='echo a2x is missing. Install a2x package.'])
 ], [build_man=no])
-AC_SUBST(DOCBOOK2X)
+AC_SUBST(ASCIIDOC)
+AC_SUBST(A2X)
 AM_CONDITIONAL([WITH_ICECREAM_MAN], [test "x$build_man" != "xno"])
 
 ########################################################################
@@ -126,7 +131,7 @@ AM_CONDITIONAL([WITH_ICECREAM_MAN], [test "x$build_man" != "xno"])
 
 # Some of these are needed by popt (or other libraries included in the future).
 
-AC_CHECK_HEADERS([sys/signal.h ifaddrs.h kinfo.h sys/param.h devstat.h])
+AC_CHECK_HEADERS([signal.h ifaddrs.h kinfo.h sys/param.h devstat.h])
 AC_CHECK_HEADERS([sys/socketvar.h sys/vfs.h])
 AC_CHECK_HEADERS([mach/host_info.h])
 AC_CHECK_HEADERS([arpa/nameser.h], [], [],
@@ -212,9 +217,13 @@ AC_CHECK_FUNCS([flock lockf])
 AC_CHECK_FUNCS([strsignal])
 AC_CHECK_FUNCS([getloadavg])
 
-AC_CHECK_LIB(lzo2, lzo1x_1_compress, LZO_LDADD=-llzo2,
-	AC_MSG_ERROR([Could not find lzo2 library - please install lzo-devel]))
-AC_SUBST(LZO_LDADD)
+PKG_CHECK_MODULES([LIBLZO2], [lzo2], [[
+    # Remove the /lzo suffix from the -I include directory. LZO refers to its
+    # header files using this prefix, for example:. #include <lzo/lzoconf.h>.
+    # Instead, the parent directory (containing the /lzo directory) should be
+    # added to the preprocessor search path.
+    LIBLZO2_CFLAGS=`echo "$LIBLZO2_CFLAGS" | $SED -E 's@/lzo($|\\s)@ @g'`
+]])
 
 PKG_CHECK_MODULES([LIBZSTD], [libzstd])
 

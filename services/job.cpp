@@ -127,3 +127,13 @@ unsigned int CompileJob::argumentFlags() const
 
     return result;
 }
+
+void CompileJob::updateFlags(const FlagsUpdater& updater) {
+    ArgumentsList flags;
+
+    for (const std::pair<std::string, Argument_Type> &m_flag : m_flags) {
+        flags.emplace_back(updater(m_flag.first, m_flag.second), m_flag.second);
+    }
+
+    swap(m_flags, flags);
+}
