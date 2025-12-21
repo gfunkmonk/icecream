@@ -98,7 +98,7 @@ static void dcc_show_usage()
         "   ICECC_COLOR_DIAGNOSTICS    set to 1 or 0 to override color diagnostics support.\n"
         "   ICECC_CARET_WORKAROUND     set to 1 or 0 to override gcc show caret workaround.\n"
         "   ICECC_COMPRESSION          if set, the libzstd compression level (1 to 19, default: 1)\n"
-        "   ICECC_ENV_COMPRESSION      compression type for icecc environments [none|gzip|bzip2|zstd|xz|gzip]\n"
+        "   ICECC_ENV_COMPRESSION      compression type for icecc environments [none|gzip|bzip2|zstd|xz|pigz]\n"
         "   ICECC_SLOW_NETWORK         set to 1 to send network data in smaller chunks\n"
         "   ICECC_SOCKET_PATH          custom daemon socket path (overrides all defaults)\n"
         "   ICECC_SOCKET_PATH1         first fallback socket path (default: /var/run/icecc/iceccd.socket)\n"
