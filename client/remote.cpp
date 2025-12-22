@@ -336,7 +336,7 @@ static void check_for_failure(Msg *msg, MsgChannel *cserver)
 
 // 'unlock_sending' = dcc_lock_host() is held when this is called, temporarily yield the lock
 // while doing network transfers
-static void write_fd_to_server(int fd, MsgChannel *cserver, bool unlock_sending = false)
+static void write_fd_to_server(int fd, MsgChannel *cserver)
 {
     unsigned char buffer[100000]; // some random but huge number
     off_t offset = 0;
@@ -366,13 +366,6 @@ static void write_fd_to_server(int fd, MsgChannel *cserver, bool unlock_sending 
 
         if (!bytes || offset == sizeof(buffer)) {
             if (offset) {
-                // If write_fd_to_server() is called for sending preprocessed data,
-                // the dcc_lock_host() lock is held to limit the number cpp invocations
-                // to the cores available to prevent overload. But that would
-                // essentially also limit network transfers, so temporarily yield and
-                // reaquire again.
-                if(unlock_sending)
-                    dcc_unlock();
                 FileChunkMsg fcmsg(buffer, offset);
 
                 if (!cserver->send_msg(fcmsg)) {
@@ -389,15 +382,6 @@ static void write_fd_to_server(int fd, MsgChannel *cserver, bool unlock_sending 
                 uncompressed += fcmsg.len;
                 compressed += fcmsg.compressed;
                 offset = 0;
-                if(unlock_sending)
-                {
-                    if(!dcc_lock_host())
-                    {
-                        log_error() << "can't reaquire lock for local cpp" << endl;
-                        close(fd);
-                        throw client_error(32, "Error 32 - lock failed");
-                    }
-                }
             }
 
             if (!bytes) {
@@ -532,6 +516,11 @@ static int build_remote_int(CompileJob &job, UseCSMsg *usecs, MsgChannel *local_
 
             EnvTransferMsg msg(job.targetPlatform(), job.environmentVersion());
 
+            if (!dcc_lock_host()) {
+                log_error() << "can't lock for local cpp" << endl;
+                return EXIT_DISTCC_FAILED;
+            }
+
             if (!cserver->send_msg(msg)) {
                 throw client_error(6, "Error 6 - send environment to remote failed");
             }
@@ -548,6 +537,8 @@ static int build_remote_int(CompileJob &job, UseCSMsg *usecs, MsgChannel *local_
                 log_error() << "write of environment failed" << endl;
                 throw client_error(8, "Error 8 - write environment to remote failed");
             }
+
+            dcc_unlock();
 
             if (IS_PROTOCOL_31(cserver)) {
                 VerifyEnvMsg verifymsg(job.targetPlatform(), job.environmentVersion());
@@ -594,6 +585,11 @@ static int build_remote_int(CompileJob &job, UseCSMsg *usecs, MsgChannel *local_
             job.appendFlag( job.language() == CompileJob::Lang_OBJC ? "objective-c" : "objective-c++", Arg_Remote );
         }
 
+        if (!dcc_lock_host()) {
+            log_error() << "can't lock for local cpp" << endl;
+            return EXIT_DISTCC_FAILED;
+        }
+
         CompileJob remote_job = job;
         RebasePathFlagsUpdater flags_updater;
         remote_job.updateFlags(flags_updater);
@@ -616,10 +612,6 @@ static int build_remote_int(CompileJob &job, UseCSMsg *usecs, MsgChannel *local_
                 throw client_error(32, "Error 18 - (fork error?)");
             }
 
-            if (!dcc_lock_host()) {
-                log_error() << "can't lock for local cpp" << endl;
-                return EXIT_DISTCC_FAILED;
-            }
             HostUnlock hostUnlock; // automatic dcc_unlock()
 
             /* This will fork, and return the pid of the child.  It will not
@@ -633,7 +625,7 @@ static int build_remote_int(CompileJob &job, UseCSMsg *usecs, MsgChannel *local_
 
             try {
                 log_block bl2("write_fd_to_server from cpp");
-                write_fd_to_server(sockets[0], cserver, true /*yield lock*/);
+                write_fd_to_server(sockets[0], cserver);
             } catch (...) {
                 kill(cpp_pid, SIGTERM);
                 throw;
@@ -672,6 +664,8 @@ static int build_remote_int(CompileJob &job, UseCSMsg *usecs, MsgChannel *local_
             log_warning() << "write of end failed" << endl;
             throw client_error(12, "Error 12 - failed to send file to remote");
         }
+
+        dcc_unlock();
 
         Msg *msg;
         {
