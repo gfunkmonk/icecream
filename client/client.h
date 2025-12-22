@@ -42,6 +42,12 @@ extern std::string remote_daemon;
 
 /* in remote.cpp */
 extern std::string get_absfilename(const std::string &_file);
+enum RunFlags
+{
+    None        = 0,
+    AlwaysLocal = 1 << 0,  // The job should be built locally.
+    FullJob      = 1 << 1   // The job should reserve all slots (if AlwaysLocal).
+};
 
 /* In arg.cpp.  */
 extern bool analyse_argv(const char * const *argv, CompileJob &job, bool icerun,
