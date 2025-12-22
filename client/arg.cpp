@@ -315,6 +315,7 @@ bool analyse_argv(const char * const *argv, CompileJob &job, bool icerun, list<s
     bool seen_march_native = false;
     bool seen_mcpu_native = false;
     bool seen_mtune_native = false;
+    std::string seen_parallel_flto;
     const char *standard = nullptr;
     // if rewriting includes and precompiling on remote machine, then cpp args are not local
     Argument_Type Arg_Cpp = compiler_only_rewrite_includes(job) ? Arg_Rest : Arg_Local;
@@ -448,8 +449,8 @@ bool analyse_argv(const char * const *argv, CompileJob &job, bool icerun, list<s
                        || !strcmp(a, "-fprofile-use")
                        || !strcmp("-save-temps", a)
                        || !strcmp("--save-temps", a)
-                       || str_startswith(a, "-save-temps=")
-                       || str_startswith(a, "--save-temps=")
+                       || str_startswith("-save-temps=", a)
+                       || str_startswith("--save-temps=", a)
                        || !strcmp(a, "-fbranch-probabilities")) {
                 log_warning() << "compiler will emit additional local files (argument " << a << "); building locally" << endl;
                 always_local = true;
@@ -626,9 +627,11 @@ bool analyse_argv(const char * const *argv, CompileJob &job, bool icerun, list<s
                 args.append(a, Arg_Rest);
             } else if (str_startswith("-fplugin=", a)
                        || str_startswith("-fsanitize-blacklist=", a)
-                       || str_startswith("-fprofile-sample-use=", a)) {
+                       || str_startswith("-fprofile-sample-use=", a)
+                       || str_startswith("-fprofile-instr-use=", a)) {
                 const char* prefix = nullptr;
-                static const char* const prefixes[] = { "-fplugin=", "-fsanitize-blacklist=", "-fprofile-sample-use=" };
+                static const char* const prefixes[] = { "-fplugin=", "-fsanitize-blacklist=",
+                    "-fprofile-sample-use=", "-fprofile-instr-use=" };
                 for(const char* const pr : prefixes) {
                     if( str_startswith(pr, a)) {
                         prefix = pr;
@@ -720,6 +723,15 @@ bool analyse_argv(const char * const *argv, CompileJob &job, bool icerun, list<s
                 if (argv[i + 1]) {
                     args.append(argv[++i], Arg_Rest);
                 }
+            } else if (str_startswith("-flto", a)) {
+                args.append(a, Arg_Rest);
+                // If -flto will be parallel (and thus use all cores), make it a "full" job
+                // so that it reserves the entire local node. The only non-parallel -flto
+                // options appear to be GCC's -flto without arguments or -flto=1.
+                if( compiler_is_clang(job))
+                    seen_parallel_flto = a;
+                else if( !str_equal("-flto", a) && !str_equal("-flto=1", a))
+                    seen_parallel_flto = a;
             } else {
                 args.append(a, Arg_Rest);
 
