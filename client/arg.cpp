@@ -969,5 +969,16 @@ bool analyse_argv(const char * const *argv, CompileJob &job, bool icerun, list<s
             << endl;
 #endif
 
-    return always_local;
+    //return always_local;
+
+    int ret = 0;
+    if( always_local ) {
+        ret |= AlwaysLocal;
+        if( !seen_parallel_flto.empty() && !seen_c ) {
+            ret |= FullJob;
+            trace() << seen_parallel_flto << " and no -c, building with all local slots" << endl;
+        }
+    }
+    return ret;
+
 }
