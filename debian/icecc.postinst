@@ -24,16 +24,32 @@ adduser --quiet --system --ingroup $ICECC_GROUP \
 
 chown $ICECC_USER:$ICECC_GROUP $ICECC_HOME
 
-if [ -x "/etc/init.d/icecc-scheduler" ]; then
-        update-rc.d icecc-scheduler defaults >/dev/null
+#if [ -x "/etc/init.d/icecc-scheduler" ]; then
+#        update-rc.d icecc-scheduler defaults >/dev/null
+        # disable icecc-scheduler when doing a new installation
+#        if test -z "$2"; then
+#                update-rc.d icecc-scheduler disable >/dev/null || exit $?
+#        fi
+#fi
+
+if [ -x "/lib/systemd/system/icecc-scheduler.service" ]; then
+        systemctl enable icecc-scheduler >/dev/null
         # disable icecc-scheduler when doing a new installation
         if test -z "$2"; then
-                update-rc.d icecc-scheduler disable >/dev/null || exit $?
+                systemctl disable icecc-scheduler >/dev/null || exit $?
         fi
 fi
 
 #DEBHELPER#
 
 chown $ICECC_USER:$ICECC_GROUP /var/log/icecc
+
+if [ -x "/etc/init.d/icecc-scheduler" ]; then
+ rm /etc/init.d/icecc-scheduler
+fi
+
+if [ -x "/etc/init.d/iceccd" ]; then
+ rm /etc/init.d/iceccd
+fi
 
 exit 0

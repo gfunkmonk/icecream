@@ -16,7 +16,7 @@ RestrictRealtime=true
 Type=simple
 EnvironmentFile=-/etc/icecc/icecc.conf
 SyslogIdentifier=iceccd
-ExecStart=/usr/bin/iceccd-wrapper -u icecc
+ExecStart=/usr/sbin/iceccd-wrapper -u icecc
 Nice=5
 
 [Install]

@@ -68,6 +68,7 @@
 #define IS_PROTOCOL_41(c) ((c)->protocol >= 41)
 #define IS_PROTOCOL_42(c) ((c)->protocol >= 42)
 #define IS_PROTOCOL_43(c) ((c)->protocol >= 43)
+#define IS_PROTOCOL_44(c) ((c)->protocol >= 44)
 
 // Terms used:
 // S  = scheduler

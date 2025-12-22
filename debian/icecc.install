@@ -1,8 +1,8 @@
 debian/icecc.conf etc/icecc/
-debian/iceccd-wrapper usr/bin/iceccd-wrapper
-debian/icecc-scheduler-wrapper usr/sbin/icecc-scheduler-wrapper
-debian/iceccd.service lib/systemd/system/iceccd.service
-debian/icecc-scheduler.service lib/systemd/system/icecc-scheduler.service
+debian/iceccd-wrapper usr/sbin/
+debian/icecc-scheduler-wrapper usr/sbin/
+debian/iceccd.service lib/systemd/system/
+debian/icecc-scheduler.service lib/systemd/system/
 usr/bin/icecc
 usr/bin/icecc-create-env
 usr/bin/icecc-test-env

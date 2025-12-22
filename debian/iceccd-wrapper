@@ -1,9 +1,19 @@
 #! /bin/sh
 
+DAEMON=/usr/sbin/iceccd
+CONFIGFILE=/etc/icecc/icecc.conf
+DEFAULTFILE=/etc/default/icecc
+
+# Read configuration files
+[ -r $CONFIGFILE ] && . $CONFIGFILE
+[ -r $DEFAULTFILE ] && . $DEFAULTFILE
+
+test -x $DAEMON || exit 0
+
 params=""
 
-if test -n "$ICECREAM_NETNAME"; then
-    params="$params -n $ICECREAM_NETNAME"
+if test -n "$ICECC_NETNAME"; then
+    params="$params -n $ICECC_NETNAME"
 fi
 
 if test -n "$ICECC_LOG_FILE"; then
@@ -14,23 +24,23 @@ if test -n "$ICECC_NICE_LEVEL"; then
     params="$params --nice $ICECC_NICE_LEVEL"
 fi
 
-if test -n "$ICECREAM_SCHEDULER_HOST"; then
-    params="$params -s $ICECREAM_SCHEDULER_HOST"
+if test -n "$ICECC_SCHEDULER_HOST"; then
+    params="$params -s $ICECC_SCHEDULER_HOST"
 fi
 
 if test -n "$ICECC_BASEDIR"; then
     params="$params -b $ICECC_BASEDIR"
 fi
 
-if test "$ICECREAM_ALLOW_REMOTE" = "no" 2> /dev/null; then
+if test "$ICECC_ALLOW_REMOTE" = "no" 2> /dev/null; then
         params="$params --no-remote"
 fi
 
-if test -n "$ICECREAM_MAX_JOBS"; then
-    if test "$ICECREAM_MAX_JOBS" -eq 0 2> /dev/null; then
+if test -n "$ICECC_MAX_JOBS"; then
+    if test "$ICECC_MAX_JOBS" -eq 0 2> /dev/null; then
         params="$params -m 1 --no-remote"
     else
-        params="$params -m $ICECREAM_MAX_JOBS"
+        params="$params -m $ICECC_MAX_JOBS"
     fi
 fi
 
@@ -42,4 +52,4 @@ if test -n "$ICECC_VERBOSE"; then
         params="$params $ICECC_VERBOSE"
 fi
 
-exec /usr/bin/iceccd $@ $params
+exec $DAEMON $@ $params
