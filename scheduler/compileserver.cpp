@@ -61,7 +61,7 @@ CompileServer::CompileServer(const int fd, struct sockaddr *_addr, const socklen
     , m_lastRequestedJobs()
     , m_cumCompiled()
     , m_cumRequested()
-    , m_clientMap()
+    , m_clientLocalMap()
     , m_blacklist()
     , m_inFd(-1)
     , m_inConnAttempt(0)
@@ -162,8 +162,7 @@ int CompileServer::maxPreloadCount() const
     // with multiple cores are capable of handling many jobs at once,
     // allow one extra preload job for each 4 cores, to minimize stalls
     // when the compile server is waiting for more jobs to be received.
-    //return 1 + (m_maxJobs / 4);
-    return m_maxJobs;
+    return 1 + (m_maxJobs / 4);
 }
 
 bool CompileServer::is_eligible_ever(const Job *job) const
@@ -195,15 +194,20 @@ bool CompileServer::is_eligible_now(const Job *job) const
 {
     if(!is_eligible_ever(job))
         return false;
-    bool jobs_okay = int(m_jobList.size()) < m_maxJobs;
-    if( m_maxJobs > 0 && int(m_jobList.size()) < m_maxJobs + maxPreloadCount())
-        jobs_okay = true; // allow a job for preloading
+    int local_jobs_now = currentJobCountLocal();
+    int jobs_now = local_jobs_now + currentJobCountRemote();
+    bool jobs_okay = jobs_now < m_maxJobs;
+    // allow a job for preloading, but only if the node isn't fully
+    // busy with local jobs (that may possibly take long)
+    if( m_maxJobs > 0 && jobs_now < m_maxJobs + maxPreloadCount() && local_jobs_now < m_maxJobs)
+        jobs_okay = true;
     bool load_okay = m_load < 1000;
     bool eligible = jobs_okay
                     && load_okay
                     && can_install(job, false).size();
 #if DEBUG_SCHEDULER > 2
-    trace() << nodeName() << " is_eligible_now: " << eligible << " (jobs_okay " << jobs_okay
+    trace() << nodeName() << " is_eligible_now: " << eligible << " (remote jobs " << m_jobList.size()
+        << ", local jobs " << (currentJobCount() - m_jobList.size()) << ", jobs_okay " << jobs_okay
         << ", load_okay " << load_okay << ")" << endl;
 #endif
     return eligible;
@@ -284,6 +288,24 @@ void CompileServer::setMaxJobs(int jobs)
     m_maxJobs = jobs;
 }
 
+int CompileServer::currentJobCountRemote() const
+{
+    return m_jobList.size();
+}
+
+int CompileServer::currentJobCountLocal() const
+{
+    int count = 0;
+    for( const std::pair<const int, CompileServer::LocalJobInfo>& info : m_clientLocalMap )
+        count += info.second.fulljob ? m_maxJobs : 1;
+    return count;
+}
+
+int CompileServer::currentJobCount() const
+{
+    return currentJobCountRemote() + currentJobCountLocal();
+}
+
 bool CompileServer::noRemote() const
 {
     return m_noRemote;
@@ -294,7 +316,7 @@ void CompileServer::setNoRemote(bool value)
     m_noRemote = value;
 }
 
-list<Job *> CompileServer::jobList() const
+const list<Job *>& CompileServer::jobList() const
 {
     return m_jobList;
 }
@@ -445,19 +467,19 @@ void CompileServer::setCumRequested(const JobStat &stats)
     m_cumRequested = stats;
 }
 
-int CompileServer::getClientJobId(const int localJobId)
+int CompileServer::getClientLocalJobId(const int localJobId)
 {
-    return m_clientMap[localJobId];
+    return m_clientLocalMap[localJobId].id;
 }
 
-void CompileServer::insertClientJobId(const int localJobId, const int newJobId)
+void CompileServer::insertClientLocalJobId(const int localJobId, const int newJobId, bool fulljob)
 {
-    m_clientMap[localJobId] = newJobId;
+    m_clientLocalMap[localJobId] = LocalJobInfo{newJobId, fulljob};
 }
 
-void CompileServer::eraseClientJobId(const int localJobId)
+void CompileServer::eraseClientLocalJobId(const int localJobId)
 {
-    m_clientMap.erase(localJobId);
+    m_clientLocalMap.erase(localJobId);
 }
 
 map<const CompileServer *, Environments> CompileServer::blacklist() const
