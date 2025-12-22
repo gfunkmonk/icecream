@@ -1,0 +1,45 @@
+#! /bin/sh
+
+params=""
+
+if test -n "$ICECREAM_NETNAME"; then
+    params="$params -n $ICECREAM_NETNAME"
+fi
+
+if test -n "$ICECC_LOG_FILE"; then
+    params="$params -l $ICECC_LOG_FILE"
+fi
+
+if test -n "$ICECC_NICE_LEVEL"; then
+    params="$params --nice $ICECC_NICE_LEVEL"
+fi
+
+if test -n "$ICECREAM_SCHEDULER_HOST"; then
+    params="$params -s $ICECREAM_SCHEDULER_HOST"
+fi
+
+if test -n "$ICECC_BASEDIR"; then
+    params="$params -b $ICECC_BASEDIR"
+fi
+
+if test "$ICECREAM_ALLOW_REMOTE" = "no" 2> /dev/null; then
+        params="$params --no-remote"
+fi
+
+if test -n "$ICECREAM_MAX_JOBS"; then
+    if test "$ICECREAM_MAX_JOBS" -eq 0 2> /dev/null; then
+        params="$params -m 1 --no-remote"
+    else
+        params="$params -m $ICECREAM_MAX_JOBS"
+    fi
+fi
+
+if test -n "$ICECC_CACHE_LIMIT"; then
+        params="$params --cache-limit $ICECC_CACHE_LIMIT"
+fi
+
+if test -n "$ICECC_VERBOSE"; then
+        params="$params $ICECC_VERBOSE"
+fi
+
+exec /usr/bin/iceccd $@ $params

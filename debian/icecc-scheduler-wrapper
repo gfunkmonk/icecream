@@ -1,0 +1,17 @@
+#! /bin/sh
+
+params=""
+
+if test -n "$ICECREAM_NETNAME"; then
+    params="$params -n $ICECREAM_NETNAME"
+fi
+
+if test -n "$ICECC_SCHEDULER_ALGORITHM"; then
+    params="$params -a $ICECC_SCHEDULER_ALGORITHM"
+fi
+
+if test -n "$ICECC_VERBOSE"; then
+    parmas="$params $ICECC_VERBOSE"
+fi
+
+exec /usr/sbin/icecc-scheduler $params "$@"
