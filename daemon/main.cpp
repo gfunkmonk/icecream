@@ -36,6 +36,7 @@
 #include <errno.h>
 #include <netdb.h>
 #include <getopt.h>
+#include <limits>
 
 #include <signal.h>
 #include <sys/stat.h>
@@ -230,17 +231,11 @@ public:
         case WAITCREATEENV:
             return ret + " " + toString(client_id) + " " + pending_create_env;
         default:
-
+            ret += " ClientID: " + toString(client_id);
             if (job_id) {
-                string jobs;
-
-                if (usecsmsg) {
-                    jobs = " CompileServer: " + usecsmsg->hostname;
-                }
-
-                return ret + " ClientID: " + toString(client_id) + " Job ID: " + toString(job_id) + jobs;
-            } else {
-                return ret + " ClientID: " + toString(client_id);
+                ret += " Job ID: " + toString(job_id);
+                if (usecsmsg)
+                    ret += " CompileServer: " + usecsmsg->hostname;
             }
             if (niceness != 0)
                 ret += " Nice: " + toString(niceness);
