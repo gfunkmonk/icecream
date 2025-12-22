@@ -240,7 +240,7 @@ static unsigned long int scan_one(const char *buff, const char *key)
 }
 #endif
 
-static unsigned int calculateMemLoad(unsigned long int &NetMemFree)
+static unsigned int calculateMemLoad(unsigned long long &NetMemFree)
 {
     unsigned long long MemTotal = 0, MemFree = 0, Buffers = 0, Cached = 0;
 
@@ -417,7 +417,7 @@ void fill_stats(unsigned long &myidleload, unsigned long &myniceload, unsigned i
     myniceload = load.niceLoad;
 
     if (msg) {
-        unsigned long int MemFree = 0;
+        unsigned long long MemFree = 0;
 
         memory_fillgrade = calculateMemLoad(MemFree);
 

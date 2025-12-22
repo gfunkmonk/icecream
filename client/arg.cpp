@@ -969,8 +969,6 @@ bool analyse_argv(const char * const *argv, CompileJob &job, bool icerun, list<s
             << endl;
 #endif
 
-    //return always_local;
-
     int ret = 0;
     if( always_local ) {
         ret |= AlwaysLocal;

@@ -51,7 +51,7 @@ enum RunFlags
 
 /* In arg.cpp.  */
 extern bool analyse_argv(const char * const *argv, CompileJob &job, bool icerun,
-                         std::list<std::string> *extrafiles);
+                        std::list<std::string> *extrafiles);
 
 /* In cpp.cpp.  */
 extern pid_t call_cpp(CompileJob &job, int fdwrite, int fdread = -1);
@@ -89,7 +89,7 @@ extern Environments parse_icecc_version(const std::string &target, const std::st
 class client_error :  public std::runtime_error
 {
     public:
-    client_error(int code, const std::string& what) 
+    client_error(int code, const std::string& what)
     : std::runtime_error(what)
     , errorCode(code)
     {}
@@ -100,7 +100,7 @@ class client_error :  public std::runtime_error
 class remote_error : public client_error
 {
     public:
-    remote_error(int code, const std::string& what) 
+    remote_error(int code, const std::string& what)
     : client_error(code, what)
     {}
 };

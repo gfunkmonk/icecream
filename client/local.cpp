@@ -150,6 +150,14 @@ bool compiler_is_clang(const CompileJob &job)
     }
 
     assert(job.compilerName().find('/') == string::npos);
+#if defined(__APPLE__)
+    // On OSX, the Clang provided by XCode masquerades as GCC. This is extremely
+    // odd, and Apple doesn't give a reason for it, so for now we just mumble
+    // agreement.
+    if (job.compilerName() == "/usr/bin/gcc" || job.compilerName() == "/usr/bin/g++") {
+        return true;
+    }
+#endif
     return job.compilerName().find("clang") != string::npos;
 }
 
@@ -158,8 +166,6 @@ Clang works suboptimally when handling an already preprocessed source file,
 for example error messages quote (already preprocessed) parts of the source.
 Therefore it is better to only locally merge all #include files into the source
 file and do the actual preprocessing remotely together with compiling.
-There exists a Clang patch to implement option -frewrite-includes that does
-such #include rewritting, and it's been only recently merged upstream.
 
 This is similar with newer gcc versions, and gcc has -fdirectives-only, which
 works similarly to -frewrite-includes (although it's not exactly the same).
@@ -172,30 +178,14 @@ bool compiler_only_rewrite_includes(const CompileJob &job)
     if (const char *rewrite_includes = getenv("ICECC_REMOTE_CPP")) {
         return (*rewrite_includes != '\0') && (*rewrite_includes != '0');
     }
-    if (!compiler_is_clang(job)) {
-#ifdef HAVE_GCC_FDIRECTIVES_ONLY
-        // gcc has had -fdirectives-only for a long time, but clang on macosx poses as gcc
-        // and fails when given the option. Since we right now detect whether a compiler
-        // is gcc merely by checking the binary name, enable usage only if the configure
-        // check found the option working.
-        return true;
-#endif
-    }
     if (compiler_is_clang(job)) {
         if (const char *rewrite_includes = getenv("ICECC_CLANG_REMOTE_CPP")) {
             return (*rewrite_includes != '\0') && (*rewrite_includes != '0');
         }
 
-#ifdef HAVE_CLANG_REWRITE_INCLUDES
-        // Assume that we use the same clang (as least as far as capabilities go)
-        // as was available when icecream was built. ICECC_CLANG_REMOTE_CPP above
-        // allows override, and the only case when this should realistically break
-        // is if somebody downgrades their clang.
-        return true;
-#endif
     }
 
-    return false;
+    return true;
 }
 
 string clang_get_default_target(const CompileJob &job)
@@ -288,7 +278,7 @@ bool compiler_get_arch_flags(const CompileJob& job, bool march, bool mcpu, bool 
 }
 
 static volatile int user_break_signal = 0;
-static volatile pid_t child_pid = 0;
+static volatile pid_t child_pid;
 
 static void handle_user_break(int sig)
 {
@@ -341,7 +331,7 @@ int build_local(CompileJob &job, MsgChannel *local_daemon, struct rusage *used)
         arguments.push_back(job.outputFile());
     }
 
-    vector<char*> argv; 
+    vector<char*> argv;
     string argstxt;
 
     for (list<string>::const_iterator it = arguments.begin(); it != arguments.end(); ++it) {
@@ -354,14 +344,14 @@ int build_local(CompileJob &job, MsgChannel *local_daemon, struct rusage *used)
 
     argv.push_back(nullptr);
 
+    trace() << "invoking:" << argstxt << endl;
+
     if (!local_daemon) {
         if (!dcc_lock_host()) {
             log_error() << "can't lock for local job" << endl;
             return EXIT_DISTCC_FAILED;
         }
     }
-
-    trace() << "invoking:" << argstxt << endl;
 
     bool color_output = job.language() != CompileJob::Lang_Custom
                         && colorify_wanted(job);
@@ -371,8 +361,10 @@ int build_local(CompileJob &job, MsgChannel *local_daemon, struct rusage *used)
         color_output = false;
     }
 
-    flush_debug();
-    child_pid = fork();
+    if (used || color_output) {
+        flush_debug();
+        child_pid = fork();
+    }
 
     if (child_pid == -1){
         log_perror("fork failed");
@@ -432,7 +424,7 @@ int build_local(CompileJob &job, MsgChannel *local_daemon, struct rusage *used)
         char buf[250];
 
         for (;;) {
-	    int r;
+            int r;
             while ((r = read(pf[0], buf, sizeof(buf) - 1)) > 0) {
                 buf[r] = '\0';
                 s_ccout.append(buf);

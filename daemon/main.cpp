@@ -406,7 +406,6 @@ static void dcc_daemon_terminate(int whichsig)
         unlink(pidFilePath.c_str());
     }
 
-    //++exit_main_loop;
     exit_main_loop = exit_main_loop + 1;
 }
 
