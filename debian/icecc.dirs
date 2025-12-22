@@ -1,2 +1,3 @@
 etc/icecc
 var/cache/icecc
+var/log/icecc

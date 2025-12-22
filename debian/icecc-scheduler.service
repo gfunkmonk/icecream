@@ -1,0 +1,23 @@
+[Unit]
+Description=Icecream distributed compiler scheduler
+
+[Service]
+ProtectSystem=full
+ProtectHome=true
+PrivateDevices=true
+ProtectHostname=true
+ProtectClock=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictRealtime=true
+Type=simple
+EnvironmentFile=-/etc/icecc/icecc.conf
+User=icecc
+Group=icecc
+SyslogIdentifier=icecc-scheduler
+ExecStart=/usr/sbin/icecc-scheduler-wrapper -u icecc
+
+[Install]
+WantedBy=multi-user.target
