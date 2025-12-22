@@ -26,6 +26,11 @@ monitors.
 Options
 -------
 
+*-a, --algorithm* _algorithm-name_::
+    The job scheduling algorithm to use. Choose from:
+    _random_, _round_robin_, _least_busy_, _fastest_.
+    Defaults to _fastest_.
+
 *-d, --daemonize*::
     Detach daemon from shell.
 
@@ -48,10 +53,6 @@ Options
     Specify the system user used by the daemon, which must be
     different than *root*. If not specified, the daemon defaults
     to the *icecc* system user if available, or *nobody* if not.
-
-*-a --algorithm* _algorithm_::
-    Specify the scheduler pick_server algorithm. Choices are:
-    RANDOM, ROUND_ROBIN, LEAST_BUSY, & FASTEST 
 
 *-v, -vv, -vvv*::
     Control verbosity of daemon. The more v the more verbose.

@@ -137,6 +137,7 @@ public:
         job = nullptr;
         usecsmsg = nullptr;
         client_id = 0;
+        niceness = 0;
         status = UNKNOWN;
         pipe_from_child = -1;
         pipe_to_child = -1;
@@ -205,6 +206,7 @@ public:
     UseCSMsg *usecsmsg;
     CompileJob *job;
     int client_id;
+    uint32_t niceness; // nice priority (0-20), for PENDING_USE_CS
     // pipe from child process with end status, only valid if WAITFORCHILD or TOINSTALL/WAITINSTALL
     int pipe_from_child;
     // pipe to child process, only valid if TOINSTALL/WAITINSTALL
@@ -240,9 +242,10 @@ public:
             } else {
                 return ret + " ClientID: " + toString(client_id);
             }
+            if (niceness != 0)
+                ret += " Nice: " + toString(niceness);
+            return ret;
         }
-
-        return ret;
     }
 };
 
@@ -313,11 +316,14 @@ public:
         // TODO: possibly speed this up in adding some sorted lists
         Client *client = nullptr;
         int min_client_id = 0;
+        uint32_t min_niceness = std::numeric_limits<uint32_t>::max();
 
         for (auto it : *this) {
-            if (it.second->status == s && (!min_client_id || min_client_id > it.second->client_id)) {
+            if (it.second->status == s && (!min_client_id || min_client_id > it.second->client_id)
+                && it.second->niceness < min_niceness ) {
                 client = it.second;
                 min_client_id = client->client_id;
+                min_niceness = client->niceness;
             }
         }
 
@@ -673,7 +679,7 @@ bool Daemon::setup_listen_unix_fd()
             strncpy(myaddr.sun_path, default_socket.c_str() , sizeof(myaddr.sun_path) - 1);
             myaddr.sun_path[sizeof(myaddr.sun_path) - 1] = '\0';
             if(default_socket.length() > sizeof(myaddr.sun_path) - 1) {
-                log_error() << "default socket path too long for sun_path" << endl;	
+                log_error() << "default socket path too long for sun_path" << endl;
             }
             if (-1 == unlink(myaddr.sun_path) && errno != ENOENT){
                 log_perror("unlink failed") << "\t" << myaddr.sun_path << endl;
@@ -799,7 +805,7 @@ void Daemon::determine_supported_features()
 bool Daemon::send_scheduler(const Msg& msg)
 {
     if (!scheduler) {
-        log_warning() << "scheduler dead ?!" << endl;
+        log_warning() << "no scheduler" << endl;
         return false;
     }
 
@@ -854,12 +860,21 @@ bool Daemon::maybe_stats(bool force_check)
         time_t diff_stat = (now.tv_sec - last_stat.tv_sec) * 1000 + (now.tv_usec - last_stat.tv_usec) / 1000;
         last_stat = now;
 
+        /* icecream_load contains time in milliseconds we have used for icecream */
+        /* idle time could have been used for icecream, so claim it */
+        icecream_load += idleLoad * diff_stat / 1000;
+
         /* add the time of our childrens, but only the time since the last run */
         struct rusage ru;
 
         if (!getrusage(RUSAGE_CHILDREN, &ru)) {
             uint32_t ice_msec = ((ru.ru_utime.tv_sec - icecream_usage.tv_sec) * 1000
                                  + (ru.ru_utime.tv_usec - icecream_usage.tv_usec) / 1000) / num_cpus;
+
+            /* heuristics when no child terminated yet: account 25% of total nice as our clients */
+            if (!ice_msec && current_kids) {
+                ice_msec = (niceLoad * diff_stat) / (4 * 1000);
+            }
 
             icecream_load += ice_msec * diff_stat / 1000;
 
@@ -876,7 +891,8 @@ bool Daemon::maybe_stats(bool force_check)
         if (idle_average > 1000)
            idle_average = 1000;
 
-        msg.load = idle_average;
+        //msg.load = idle_average;
+        msg.load = std::max((1000 - idle_average), memory_fillgrade);
 
 #ifdef HAVE_SYS_VFS_H
         struct statfs buf;
@@ -891,8 +907,7 @@ bool Daemon::maybe_stats(bool force_check)
 
         mem_limit = std::max(int(msg.freeMem / std::min(std::max(max_kids, 1U), 4U)), min_mem_limit);
 
-        log_warning() <<  "msg.load " <<  msg.load << endl;
-        if (abs(int(msg.load) - current_load) >= 10
+        if (abs(int(msg.load) - current_load) >= 100
             || (msg.load == 1000 && current_load != 1000)
             || (msg.load != 1000 && current_load == 1000)) {
             if (!send_scheduler(msg)) {
@@ -1833,6 +1848,7 @@ bool Daemon::handle_get_cs(Client *client, Msg *msg)
     GetCSMsg *umsg = dynamic_cast<GetCSMsg *>(msg);
     assert(client);
     client->status = Client::WAITFORCS;
+    client->niceness = umsg->niceness;
     umsg->client_id = client->client_id;
     trace() << "handle_get_cs " << umsg->client_id << endl;
 
