@@ -899,8 +899,8 @@ bool Daemon::maybe_stats(bool force_check)
 
 #endif
 
-        mem_limit = std::max(int(msg.freeMem / std::min(std::max(max_kids, 1U), 4U)), min_mem_limit);
-
+        //mem_limit = std::max(int(msg.freeMem / std::min(std::max(max_kids, 1U), 4U)), min_mem_limit);
+        mem_limit = std::max(int(msg.freeMem / std::max(max_kids, 1U)), min_mem_limit);
         if (abs(int(msg.load) - current_load) >= 100
             || (msg.load == 1000 && current_load != 1000)
             || (msg.load != 1000 && current_load == 1000)) {
