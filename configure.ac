@@ -1,6 +1,6 @@
 # quite some macros are taken from distcc
 
-AC_PREREQ([2.63])
+AC_PREREQ([2.72])
 
 # ====================
 # Version informations
@@ -43,37 +43,84 @@ AC_PROG_SED
 #])
 
 # Check for C++20 support
-AC_MSG_CHECKING([for C++20 support])
+#AC_MSG_CHECKING([for C++20 support])
+# Save current CXXFLAGS
+#O_CXXFLAGS="$CXXFLAGS"
+# Try with -std=c++20 (GCC/Clang)
+#CXXFLAGS="$O_CXXFLAGS -std=c++20"
+#AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[ constexpr int get_const() { return 5; } ]], [[ ]])],
+#  [AC_MSG_RESULT([yes, using -std=c++20])],
+#  [# If -std=c++20 fails, try -std=c++17
+#   CXXFLAGS="$O_CXXFLAGS -std=c++17"
+#   AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[ constexpr int get_const() { return 5; } ]], [[ ]])],
+#     [AC_MSG_RESULT([yes, using -std=c++17])],
+#  [# If -std=c++17 fails, try -std=c++14
+#   CXXFLAGS="$O_CXXFLAGS -std=c++14"
+#   AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[ constexpr int get_const() { return 5; } ]], [[ ]])],
+#     [AC_MSG_RESULT([yes, using -std=c++14])],
+#  [# If -std=c++14 fails, try -std=c++11
+#   CXXFLAGS="$O_CXXFLAGS -std=c++11"
+#   AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[ constexpr int get_const() { return 5; } ]], [[ ]])],
+#     [AC_MSG_RESULT([yes, using -std=c++11])],
+#     [# If all else fails, restore original flags and error out
+#      CXXFLAGS="$O_CXXFLAGS"
+#      AC_MSG_RESULT([no])
+#      AC_MSG_ERROR([C++ support is required but not available.])
+#     ])
+#     ])
+#     ])
+#  ]
+#)
+
+AC_MSG_CHECKING([for C++ standard support])
+
 # Save current CXXFLAGS
 O_CXXFLAGS="$CXXFLAGS"
-# Try with -std=c++20 (GCC/Clang)
+
+# Define the test program
+m4_define([CPP_TEST_PROGRAM], [AC_LANG_PROGRAM([[
+    constexpr int get_const() { return 5; }
+]], [[
+    constexpr int val = get_const();
+    return (val == 5) ? 0 : 1;
+]])])
+
+success=no
+
+# Try C++20
 CXXFLAGS="$O_CXXFLAGS -std=c++20"
-AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[ constexpr int get_const() { return 5; } ]], [[ ]])],
-  [AC_MSG_RESULT([yes, using -std=c++20])],
-  [# If -std=c++20 fails, try -std=c++17
-   CXXFLAGS="$O_CXXFLAGS -std=c++17"
-   AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[ constexpr int get_const() { return 5; } ]], [[ ]])],
-     [AC_MSG_RESULT([yes, using -std=c++17])],
-  [# If -std=c++17 fails, try -std=c++14
-   CXXFLAGS="$O_CXXFLAGS -std=c++14"
-   AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[ constexpr int get_const() { return 5; } ]], [[ ]])],
-     [AC_MSG_RESULT([yes, using -std=c++14])],
-  [# If -std=c++14 fails, try -std=c++11
-   CXXFLAGS="$O_CXXFLAGS -std=c++11"
-   AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[ constexpr int get_const() { return 5; } ]], [[ ]])],
-     [AC_MSG_RESULT([yes, using -std=c++11])],
-     [# If all else fails, restore original flags and error out
-      CXXFLAGS="$O_CXXFLAGS"
-      AC_MSG_RESULT([no])
-      AC_MSG_ERROR([C++ support is required but not available.])
-     ]
-   )
-     ]
-   )
-     ]
-   )
-  ]
-)
+AC_COMPILE_IFELSE([CPP_TEST_PROGRAM], [
+    AC_MSG_RESULT([yes, using -std=c++20])
+    success=yes
+], [
+    # Fallback to C++17
+    CXXFLAGS="$O_CXXFLAGS -std=c++17"
+    AC_COMPILE_IFELSE([CPP_TEST_PROGRAM], [
+        AC_MSG_RESULT([yes, using -std=c++17])
+        success=yes
+    ], [
+        # Fallback to C++14
+        CXXFLAGS="$O_CXXFLAGS -std=c++14"
+        AC_COMPILE_IFELSE([CPP_TEST_PROGRAM], [
+            AC_MSG_RESULT([yes, using -std=c++14])
+            success=yes
+        ], [
+            # Fallback to C++11
+            CXXFLAGS="$O_CXXFLAGS -std=c++11"
+            AC_COMPILE_IFELSE([CPP_TEST_PROGRAM], [
+                AC_MSG_RESULT([yes, using -std=c++11])
+                success=yes
+            ], [])
+        ])
+    ])
+])
+
+# If all trials failed
+if test "$success" = "no"; then
+    CXXFLAGS="$O_CXXFLAGS"
+    AC_MSG_RESULT([no])
+    AC_MSG_ERROR([C++11 or higher support is required but not available.])
+fi
 
 if test "$GCC" = yes; then
     cast_align=-Wcast-align
