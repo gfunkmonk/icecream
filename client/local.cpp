@@ -278,7 +278,7 @@ bool compiler_get_arch_flags(const CompileJob& job, bool march, bool mcpu, bool 
 }
 
 static volatile int user_break_signal = 0;
-static volatile pid_t child_pid = 0;
+static volatile pid_t child_pid;
 
 static void handle_user_break(int sig)
 {
@@ -344,14 +344,14 @@ int build_local(CompileJob &job, MsgChannel *local_daemon, struct rusage *used)
 
     argv.push_back(nullptr);
 
+    trace() << "invoking:" << argstxt << endl;
+
     if (!local_daemon) {
         if (!dcc_lock_host()) {
             log_error() << "can't lock for local job" << endl;
             return EXIT_DISTCC_FAILED;
         }
     }
-
-    trace() << "invoking:" << argstxt << endl;
 
     bool color_output = job.language() != CompileJob::Lang_Custom
                         && colorify_wanted(job);
@@ -361,8 +361,10 @@ int build_local(CompileJob &job, MsgChannel *local_daemon, struct rusage *used)
         color_output = false;
     }
 
-    flush_debug();
-    child_pid = fork();
+    if (used || color_output) {
+        flush_debug();
+        child_pid = fork();
+    }
 
     if (child_pid == -1){
         log_perror("fork failed");
