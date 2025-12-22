@@ -1,6 +1,6 @@
 # quite some macros are taken from distcc
 
-AC_PREREQ([2.69])
+AC_PREREQ([2.63])
 
 # ====================
 # Version informations
@@ -32,15 +32,48 @@ AC_PROG_CC
 AC_PROG_CXX
 AC_PROG_SED
 
-AC_MSG_CHECKING([for C++17 support (-std=c++17)])
-CXXFLAGS="$CXXFLAGS -std=c++17"
-AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[
-        constexpr int get_const() { return 5; }
-    ]], [[
-    ]])],[
-        AC_MSG_RESULT(yes)
-    ],[ AC_MSG_ERROR(no) 
-])
+#AC_MSG_CHECKING([for C++17 support (-std=c++17)])
+#CXXFLAGS="$CXXFLAGS -std=c++17"
+#AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[
+#        constexpr int get_const() { return 5; }
+#    ]], [[
+#    ]])],[
+#        AC_MSG_RESULT(yes)
+#    ],[ AC_MSG_ERROR(no) 
+#])
+
+# Check for C++20 support
+AC_MSG_CHECKING([for C++20 support])
+# Save current CXXFLAGS
+O_CXXFLAGS="$CXXFLAGS"
+# Try with -std=c++20 (GCC/Clang)
+CXXFLAGS="$O_CXXFLAGS -std=c++20"
+AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[ constexpr int get_const() { return 5; } ]], [[ ]])],
+  [AC_MSG_RESULT([yes, using -std=c++20])],
+  [# If -std=c++20 fails, try -std=c++17
+   CXXFLAGS="$O_CXXFLAGS -std=c++17"
+   AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[ constexpr int get_const() { return 5; } ]], [[ ]])],
+     [AC_MSG_RESULT([yes, using -std=c++17])],
+  [# If -std=c++17 fails, try -std=c++14
+   CXXFLAGS="$O_CXXFLAGS -std=c++14"
+   AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[ constexpr int get_const() { return 5; } ]], [[ ]])],
+     [AC_MSG_RESULT([yes, using -std=c++14])],
+  [# If -std=c++14 fails, try -std=c++11
+   CXXFLAGS="$O_CXXFLAGS -std=c++11"
+   AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[ constexpr int get_const() { return 5; } ]], [[ ]])],
+     [AC_MSG_RESULT([yes, using -std=c++11])],
+     [# If all else fails, restore original flags and error out
+      CXXFLAGS="$O_CXXFLAGS"
+      AC_MSG_RESULT([no])
+      AC_MSG_ERROR([C++ support is required but not available.])
+     ]
+   )
+     ]
+   )
+     ]
+   )
+  ]
+)
 
 if test "$GCC" = yes; then
     cast_align=-Wcast-align
