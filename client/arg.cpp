@@ -411,9 +411,8 @@ int analyse_argv(const char * const *argv, CompileJob &job, bool icerun, list<st
                 const char *pos = a + 4, *next_comma;
                 bool local = false;
                 string as_arg;
-                string remote_arg;
+                string remote_arg = "-Wa";
                 remote_arg.reserve(strlen(a) + ASSEMBLER_ARG_EXTRA_CAPACITY);
-                remote_arg = "-Wa";
 
                 while (1) {
                     next_comma = strchr(pos, ',');

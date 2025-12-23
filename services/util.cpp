@@ -162,7 +162,7 @@ string read_command_output(const string& command, const vector<string>& args, in
         for (;;) {
             int r = read(pipes[0], buf, sizeof(buf) - 1 );
             if( r > 0 ) {
-                output.append(buf, r); // More efficient than += with null termination
+                output.append(buf, r); // More efficient by avoiding temporary string construction
             }
             if (r == 0)
                 break;
