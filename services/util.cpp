@@ -34,6 +34,9 @@
 
 using namespace std;
 
+// Initial capacity for command output buffer to reduce reallocations
+static const size_t COMMAND_OUTPUT_INITIAL_CAPACITY = 4096;
+
 /**
  * Return a pointer to the basename of the file (everything after the
  * last slash.)  If there is no slash, return the whole filename,
@@ -154,7 +157,7 @@ string read_command_output(const string& command, const vector<string>& args, in
         if(shell_exit_status(status) != 0)
             return string();
         string output;
-        output.reserve(4096); // Pre-allocate to reduce reallocations
+        output.reserve(COMMAND_OUTPUT_INITIAL_CAPACITY);
         char buf[1024];
         for (;;) {
             int r = read(pipes[0], buf, sizeof(buf) - 1 );

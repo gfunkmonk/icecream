@@ -46,6 +46,9 @@ bool explicit_no_show_caret;
 
 #define CLIENT_DEBUG 0
 
+// Extra capacity for assembler argument buffer to reduce reallocations
+static const size_t ASSEMBLER_ARG_EXTRA_CAPACITY = 64;
+
 inline bool str_equal(const char* a, const char* b)
 {
     return strcmp(a, b) == 0;
@@ -409,7 +412,7 @@ int analyse_argv(const char * const *argv, CompileJob &job, bool icerun, list<st
                 bool local = false;
                 string as_arg;
                 string remote_arg;
-                remote_arg.reserve(strlen(a) + 64); // Pre-allocate to avoid reallocations
+                remote_arg.reserve(strlen(a) + ASSEMBLER_ARG_EXTRA_CAPACITY);
                 remote_arg = "-Wa";
 
                 while (1) {
