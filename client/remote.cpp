@@ -1134,10 +1134,12 @@ int build_remote(CompileJob &job, MsgChannel *local_daemon, const Environments &
                                     << first_md5 << " - aborting!\n";
                         string job0_caught = job0_output + ".caught";
                         rename(job0_output.c_str(), job0_caught.c_str());
-                        rename(preproc, (string(preproc) + ".caught").c_str());
+                        string preproc_caught = string(preproc) + ".caught";
+                        rename(preproc, preproc_caught.c_str());
                         if (has_split_dwarf) {
                             string dwo_file = job0_output.substr(0, job0_output.rfind('.')) + ".dwo";
-                            rename(dwo_file.c_str(), (dwo_file + ".caught").c_str());
+                            string dwo_caught = dwo_file + ".caught";
+                            rename(dwo_file.c_str(), dwo_caught.c_str());
                         }
                         exit_codes[0] = -1; // overwrite
                         break;

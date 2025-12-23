@@ -534,7 +534,7 @@ int main(int argc, char **argv)
         }
 
         // we set it to local so we tell the local daemon about it - avoiding file locking
-        if (envs.size() == 0) {
+        if (envs.empty()) {
             local = true;
         }
 

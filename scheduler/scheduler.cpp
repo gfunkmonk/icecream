@@ -257,7 +257,7 @@ static float server_speed(CompileServer *cs, Job *job, bool blockDebug)
 #if DEBUG_SCHEDULER <= 2
     (void)blockDebug;
 #endif
-    if (cs->lastCompiledJobs().size() == 0 || cs->cumCompiled().compileTimeUser() == 0) {
+    if (cs->lastCompiledJobs().empty() || cs->cumCompiled().compileTimeUser() == 0) {
         return 0;
     } else {
         float f = (float)cs->cumCompiled().outputSize()
@@ -751,7 +751,7 @@ static CompileServer *pick_server_new(Job *job, list<CompileServer *> &eligible)
     CompileServer *selected = nullptr;
 
     for (CompileServer * const cs: eligible) {
-        if ((cs->lastCompiledJobs().size() == 0) && (cs->currentJobCount() == 0) && cs->maxJobs()) {
+        if (cs->lastCompiledJobs().empty() && (cs->currentJobCount() == 0) && cs->maxJobs()) {
             if (!selected) {
                 selected = cs;
             } else if (!envs_match(cs, job).empty()) {
@@ -920,7 +920,7 @@ static CompileServer *pick_server(Job *job, SchedulerAlgorithmName schedulerAlgo
     }
 
     // Don't bother running an algorithm if we don't need to.
-    if ( eligible.size() == 0 ) {
+    if (eligible.empty()) {
         trace() << "no eligible servers" << endl;
         return nullptr;
     } else if (eligible.size() == 1) {
