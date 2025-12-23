@@ -29,6 +29,7 @@
 #include <string.h>
 #include <errno.h>
 #include <assert.h>
+#include <unordered_set>
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -124,7 +125,7 @@ static bool is_argument_with_space(const char* argument)
     //         -segcreate <arg1> <arg2> <arg3>
     //         -segprot <arg1> <arg2> <arg3>
     //       Move some arguments to Arg_Cpp or Arg_Local
-    static const char* const arguments[] = {
+    static const unordered_set<string> arguments = {
         "-dyld-prefix",
         "-gcc-toolchain",
         "--param",
@@ -222,13 +223,7 @@ static bool is_argument_with_space(const char* argument)
         "-iwithsysroot"
     };
 
-    for(const char* const arg : arguments) {
-        if (str_equal( arg, argument)) {
-            return true;
-        }
-    }
-
-    return false;
+    return arguments.find(argument) != arguments.end();
 }
 
 static bool analyze_assembler_arg(string &arg, list<string> *extrafiles)
@@ -413,7 +408,9 @@ int analyse_argv(const char * const *argv, CompileJob &job, bool icerun, list<st
                 const char *pos = a + 4, *next_comma;
                 bool local = false;
                 string as_arg;
-                string remote_arg = "-Wa";
+                string remote_arg;
+                remote_arg.reserve(strlen(a) + 64); // Pre-allocate to avoid reallocations
+                remote_arg = "-Wa";
 
                 while (1) {
                     next_comma = strchr(pos, ',');
@@ -424,7 +421,8 @@ int analyse_argv(const char * const *argv, CompileJob &job, bool icerun, list<st
                         as_arg = pos;
 
                     local = analyze_assembler_arg(as_arg, extrafiles);
-                    remote_arg += "," + as_arg;
+                    remote_arg += ',';
+                    remote_arg += as_arg;
 
                     if (!next_comma)
                         break;
