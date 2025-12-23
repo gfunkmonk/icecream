@@ -46,7 +46,6 @@
 #include <algorithm>
 #include <cassert>
 #include <fstream>
-#include <string>
 #include <limits>
 #include <stdio.h>
 #include <pwd.h>

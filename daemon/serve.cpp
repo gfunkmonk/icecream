@@ -40,7 +40,6 @@
 #  include <signal.h>
 #endif /* HAVE_SIGNAL_H */
 #include <sys/param.h>
-#include <unistd.h>
 
 #include <job.h>
 #include <comm.h>

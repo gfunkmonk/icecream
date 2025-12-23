@@ -66,7 +66,6 @@
 #ifdef HAVE_RESOLV_H
 #  include <resolv.h>
 #endif
-#include <netdb.h>
 
 #ifndef RUSAGE_SELF
 #  define RUSAGE_SELF (0)

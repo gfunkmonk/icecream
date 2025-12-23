@@ -31,7 +31,6 @@
 #include <sys/un.h>
 #include <arpa/inet.h>
 #include <poll.h>
-#include <netinet/in.h>
 #include <netinet/tcp.h>
 #ifdef HAVE_NETINET_TCP_VAR_H
 #include <sys/socketvar.h>
@@ -41,7 +40,6 @@
 #include <fcntl.h>
 #include <netdb.h>
 #include <unistd.h>
-#include <errno.h>
 #include <string>
 #include <iostream>
 #include <assert.h>
