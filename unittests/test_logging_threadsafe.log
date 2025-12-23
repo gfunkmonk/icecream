@@ -1,6 +1,6 @@
 Running thread-safe logging unit tests...
 
-test_log_format: PASSED (format: TEST[11863] 2025-12-23 18:52:44: )
+test_log_format: PASSED (format: TEST[13052] 2025-12-23 18:56:00: )
 test_timestamp_caching: PASSED
 test_concurrent_logging: PASSED (10 threads, 100 iterations each)
 test_log_block_string_member: PASSED (created 1000 blocks)

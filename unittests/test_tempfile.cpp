@@ -178,9 +178,9 @@ static void test_relative_path() {
     assert(name[0] != '/');
     assert(strstr(name, "reltest_") != nullptr);
     
-    // File should still exist (in /tmp)
+    // File should still exist (in /tmp, so prepend /tmp to check)
     char full_path[1024];
-    snprintf(full_path, sizeof(full_path), "/%s", name);
+    snprintf(full_path, sizeof(full_path), "/tmp/%s", name);
     assert(file_exists(full_path));
     
     unlink(full_path);

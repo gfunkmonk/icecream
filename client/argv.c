@@ -72,6 +72,7 @@ dupargv (char * const *argv)
   size_t total_length;
   char *string_block;
   size_t offset;
+  int i;
 
   if (argv == NULL)
     return NULL;
@@ -93,7 +94,7 @@ dupargv (char * const *argv)
   
   /* Copy strings and set up pointers */
   offset = 0;
-  for (int i = 0; i < argc; i++) {
+  for (i = 0; i < argc; i++) {
     size_t len = strlen(argv[i]) + 1;
     memcpy(string_block + offset, argv[i], len);
     copy[i] = string_block + offset;

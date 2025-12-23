@@ -77,7 +77,7 @@ int dcc_make_tmpnam(const char *prefix, const char *suffix, char **name_ret, int
 
     if (snprintf(template_name, template_length, "%s/%s_XXXXXX",
                  (relative ? &_PATH_TMP[1] : _PATH_TMP),
-                 prefix) == -1) {
+                 prefix) >= (int)template_length) {
         free(template_name);
         return EXIT_OUT_OF_MEMORY;
     }
@@ -108,7 +108,7 @@ int dcc_make_tmpnam(const char *prefix, const char *suffix, char **name_ret, int
             return EXIT_OUT_OF_MEMORY;
         }
 
-        if (snprintf(final_name, final_length, "%s%s", template_name, suffix) == -1) {
+        if (snprintf(final_name, final_length, "%s%s", template_name, suffix) >= (int)final_length) {
             unlink(template_name);
             free(template_name);
             free(final_name);
