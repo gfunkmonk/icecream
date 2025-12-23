@@ -435,7 +435,7 @@ pid_t start_install_environment(const std::string &basename, const std::string &
         return 0;
     }
 
-    dirname = dirname + "/" + name;
+    dirname += "/" + name;
 
     if (mkdir(dirname.c_str(), 0770)) {
         log_perror("mkdir name") << "\t" << dirname << endl;
@@ -588,12 +588,13 @@ size_t finalize_install_environment(const std::string &basename, const std::stri
                                     uid_t user_uid, gid_t user_gid)
 {
     string dirname = basename + "/target=" + target;
+    string tmpdir = dirname + "/tmp";
     errno = 0;
-    mkdir((dirname + "/tmp").c_str(), 01775);
-    ignore_result(chown((dirname + "/tmp").c_str(), user_uid, user_gid));
-    chmod((dirname + "/tmp").c_str(), 01775);
+    mkdir(tmpdir.c_str(), 01775);
+    ignore_result(chown(tmpdir.c_str(), user_uid, user_gid));
+    chmod(tmpdir.c_str(), 01775);
     if (errno == -1) {
-        log_error() << "failed to setup " << dirname << "/tmp :"
+        log_error() << "failed to setup " << tmpdir << " :"
                     << strerror(errno) << endl;
     }
 

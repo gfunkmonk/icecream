@@ -173,7 +173,6 @@ public:
 };
 
 #include <sstream>
-#include <iostream>
 
 template<class T> std::string toString(const T &val)
 {

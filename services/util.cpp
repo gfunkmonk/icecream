@@ -215,7 +215,7 @@ string read_command_line(const string& command, const vector<string>& args, int 
 
 bool pollfd_is_set(const vector<pollfd>& pollfds, int fd, int flags, bool check_errors)
 {
-    for(auto pollfd : pollfds)
+    for(const auto& pollfd : pollfds)
     {
         if( pollfd.fd == fd )
         {
