@@ -52,6 +52,17 @@ tests/test-setup.sh
 tests/listing.txt
 unittests/testargs
 unittests/testargs.trs
+unittests/testargs.log
+unittests/test_dupargv
+unittests/test_dupargv.trs
+unittests/test_dupargv.log
+unittests/test_tempfile
+unittests/test_tempfile.trs
+unittests/test_tempfile.log
+unittests/test_logging_threadsafe
+unittests/test_logging_threadsafe.trs
+unittests/test_logging_threadsafe.log
+unittests/test-suite.log
 # others
 compile_commands.json
 .vs*
