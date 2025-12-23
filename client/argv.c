@@ -69,18 +69,38 @@ dupargv (char * const *argv)
 {
   int argc;
   char **copy;
+  size_t total_length;
+  char *string_block;
+  size_t offset;
 
   if (argv == NULL)
     return NULL;
 
-  /* the vector */
-  for (argc = 0; argv[argc] != NULL; argc++);
-  copy = (char **) malloc ((argc + 1) * sizeof (char *));
+  /* Count arguments and total string length */
+  total_length = 0;
+  for (argc = 0; argv[argc] != NULL; argc++) {
+    total_length += strlen(argv[argc]) + 1; /* +1 for null terminator */
+  }
 
-  /* the strings */
-  for (argc = 0; argv[argc] != NULL; argc++)
-    copy[argc] = strdup (argv[argc]);
+  /* Allocate the pointer array and string block in one allocation */
+  /* Layout: [ptr0][ptr1]...[ptrN][NULL][str0\0][str1\0]...[strN\0] */
+  copy = (char **) malloc((argc + 1) * sizeof(char *) + total_length);
+  if (copy == NULL)
+    return NULL;
+
+  /* String block starts right after the pointer array */
+  string_block = (char *)&copy[argc + 1];
+  
+  /* Copy strings and set up pointers */
+  offset = 0;
+  for (int i = 0; i < argc; i++) {
+    size_t len = strlen(argv[i]) + 1;
+    memcpy(string_block + offset, argv[i], len);
+    copy[i] = string_block + offset;
+    offset += len;
+  }
   copy[argc] = NULL;
+
   return copy;
 }
 
@@ -102,10 +122,8 @@ void freeargv (char **vector)
   if (vector == NULL)
     return;
 
-  char **scan;
-  for (scan = vector; *scan != NULL; scan++)
-    free (*scan);
-
+  /* With single-allocation dupargv, we only need to free the vector itself.
+     The strings are in the same allocation block. */
   free (vector);
 }
 

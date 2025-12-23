@@ -241,6 +241,7 @@ fi
 AC_CHECK_FUNCS([flock lockf])
 AC_CHECK_FUNCS([strsignal])
 AC_CHECK_FUNCS([getloadavg])
+AC_CHECK_FUNCS([localtime_r])
 
 PKG_CHECK_MODULES([LIBLZO2], [lzo2], [[
     # Remove the /lzo suffix from the -I include directory. LZO refers to its

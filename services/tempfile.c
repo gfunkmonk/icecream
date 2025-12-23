@@ -62,83 +62,71 @@
  **/
 int dcc_make_tmpnam(const char *prefix, const char *suffix, char **name_ret, int relative)
 {
-    unsigned long random_bits;
-    unsigned long tries = 0;
-    size_t tmpname_length;
-    char *tmpname;
+    char *template_name;
+    char *final_name;
+    size_t template_length;
+    int fd;
 
-    tmpname_length = strlen(_PATH_TMP) + 1 + strlen(prefix) + 1 + 8 + strlen(suffix) + 1;
-    tmpname = malloc(tmpname_length);
+    /* Build template: /tmp/prefix_XXXXXX */
+    template_length = strlen(_PATH_TMP) + 1 + strlen(prefix) + 1 + 6 + 1;
+    template_name = malloc(template_length);
 
-    if (!tmpname) {
+    if (!template_name) {
         return EXIT_OUT_OF_MEMORY;
     }
 
-    random_bits = (unsigned long) getpid() << 16;
-
-    {
-        struct timeval tv;
-        gettimeofday(&tv, NULL);
-        random_bits ^= tv.tv_usec << 16;
-        random_bits ^= tv.tv_sec;
+    if (snprintf(template_name, template_length, "%s/%s_XXXXXX",
+                 (relative ? &_PATH_TMP[1] : _PATH_TMP),
+                 prefix) == -1) {
+        free(template_name);
+        return EXIT_OUT_OF_MEMORY;
     }
 
-#if 0
-    random_bits = 0;            /* FOR TESTING */
-#endif
+    /* Create the file atomically with mkstemp */
+    fd = mkstemp(template_name);
 
-    do {
-        if (snprintf(tmpname, tmpname_length, "%s/%s_%08lx%s",
-                     (relative ? &_PATH_TMP[1] : _PATH_TMP),
-                     prefix,
-                     random_bits & 0xffffffffUL,
-                     suffix) == -1) {
-            free(tmpname);
+    if (fd == -1) {
+        free(template_name);
+        return EXIT_IO_ERROR;
+    }
+
+    if (close(fd) == -1) {
+        /* Clean up the created file */
+        unlink(template_name);
+        free(template_name);
+        return EXIT_IO_ERROR;
+    }
+
+    /* If a suffix is needed, rename the file */
+    if (suffix && suffix[0] != '\0') {
+        size_t final_length = strlen(template_name) + strlen(suffix) + 1;
+        final_name = malloc(final_length);
+
+        if (!final_name) {
+            unlink(template_name);
+            free(template_name);
             return EXIT_OUT_OF_MEMORY;
         }
 
-        /* Note that if the name already exists as a symlink, this
-         * open call will fail.
-         *
-         * The permissions are tight because nobody but this process
-         * and our children should do anything with it. */
-        int fd = open(tmpname, O_WRONLY | O_CREAT | O_EXCL, 0600);
+        if (snprintf(final_name, final_length, "%s%s", template_name, suffix) == -1) {
+            unlink(template_name);
+            free(template_name);
+            free(final_name);
+            return EXIT_OUT_OF_MEMORY;
+        }
 
-        if (fd == -1) {
-            /* Don't try getting a file too often.  Safety net against
-               endless loops. Probably just paranoia.  */
-            if (++tries > 1000000) {
-                free(tmpname);
-                return EXIT_IO_ERROR;
-            }
-
-            /* Some errors won't change by changing the filename,
-               e.g. ENOENT means that the directory where we try to create
-               the file was removed from under us.  Don't endlessly loop
-               in that case.  */
-            switch (errno) {
-            case EACCES:
-            case EEXIST:
-            case EISDIR:
-            case ELOOP:
-                /* try again */
-                random_bits += 7777; /* fairly prime */
-                continue;
-            }
-
-            free(tmpname);
+        if (rename(template_name, final_name) == -1) {
+            unlink(template_name);
+            free(template_name);
+            free(final_name);
             return EXIT_IO_ERROR;
         }
 
-        if (close(fd) == -1) {  /* huh? */
-            free(tmpname);
-            return EXIT_IO_ERROR;
-        }
-
-        break;
-    } while (1);
-
-    *name_ret = tmpname;
+        free(template_name);
+        *name_ret = final_name;
+    } else {
+        *name_ret = template_name;
+    }
 
     return 0;
 }

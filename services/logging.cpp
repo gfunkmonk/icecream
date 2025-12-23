@@ -27,11 +27,64 @@
 #include <signal.h>
 #include <limits.h>
 #include <fcntl.h>
+#include <mutex>
 #ifdef __linux__
 #include <dlfcn.h>
 #endif
 
 using namespace std;
+
+// Mutex for localtime() when localtime_r is not available
+static mutex localtime_mutex;
+
+// Thread-safe output_date implementation with per-second caching
+std::ostream &output_date(std::ostream &os)
+{
+    time_t t = time(0);
+    
+    // Thread-local cache: stores formatted time for the current second
+    thread_local time_t cached_time = 0;
+    thread_local char cached_buf[64];
+    
+    // Only format time if the second has changed
+    if (t != cached_time) {
+        struct tm tm_buf;
+        struct tm *tmp;
+        
+#ifdef HAVE_LOCALTIME_R
+        // Use thread-safe localtime_r if available
+        tmp = localtime_r(&t, &tm_buf);
+#else
+        // Fall back to localtime with mutex protection
+        {
+            lock_guard<mutex> lock(localtime_mutex);
+            tmp = localtime(&t);
+            if (tmp) {
+                tm_buf = *tmp;
+                tmp = &tm_buf;
+            }
+        }
+#endif
+        
+        if (tmp) {
+            strftime(cached_buf, sizeof(cached_buf), "%Y-%m-%d %T: ", tmp);
+            cached_time = t;
+        } else {
+            // Fallback if time formatting fails
+            snprintf(cached_buf, sizeof(cached_buf), "[time error]: ");
+            cached_time = 0;
+        }
+    }
+
+    if (logfile_prefix.size()) {
+        os << logfile_prefix;
+    }
+
+    os << "[" << getpid() << "] ";
+    os << cached_buf;
+    
+    return os;
+}
 
 int debug_level = Error;
 ostream *logfile_trace = nullptr;

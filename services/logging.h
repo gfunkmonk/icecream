@@ -54,22 +54,8 @@ void reset_debug();
 void close_debug();
 void flush_debug();
 
-static inline std::ostream &output_date(std::ostream &os)
-{
-    time_t t = time(0);
-    struct tm *tmp = localtime(&t);
-    char buf[64];
-    strftime(buf, sizeof(buf), "%Y-%m-%d %T: ", tmp);
-
-    if (logfile_prefix.size()) {
-        os << logfile_prefix;
-    }
-
-    os << "[" << getpid() << "] ";
-
-    os << buf;
-    return os;
-}
+// Forward declare the implementation in logging.cpp
+std::ostream &output_date(std::ostream &os);
 
 static inline std::ostream &log_info()
 {
@@ -137,18 +123,18 @@ class log_block
 {
     static unsigned nesting;
     timeval m_start;
-    char *m_label;
+    std::string m_label;
 
 public:
     log_block(const char *label = 0)
+        : m_label(label ? label : "")
     {
         for (unsigned i = 0; i < nesting; ++i) {
             log_info() << "  ";
         }
 
-        log_info() << "<" << (label ? label : "") << ">\n";
+        log_info() << "<" << m_label << ">\n";
 
-        m_label = strdup(label ? label : "");
         ++nesting;
         gettimeofday(&m_start, 0);
     }
@@ -167,8 +153,6 @@ public:
         log_info() << "</" << m_label << ": "
                    << (end.tv_sec - m_start.tv_sec) * 1000 + (end.tv_usec - m_start.tv_usec) / 1000
                    << "ms>\n";
-
-        free(m_label);
     }
 };
 
