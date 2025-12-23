@@ -1,0 +1,13 @@
+Running dupargv/freeargv unit tests...
+
+test_basic_dupargv: PASSED
+test_empty_argv: PASSED
+test_null_input: PASSED
+test_single_arg: PASSED
+test_long_strings: PASSED
+test_special_chars: PASSED
+test_multiple_duplications: PASSED
+test_single_allocation: PASSED
+
+All tests PASSED!
+PASS test_dupargv (exit status: 0)

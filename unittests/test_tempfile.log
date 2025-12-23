@@ -1,0 +1,12 @@
+Running tempfile unit tests...
+
+test_basic_tmpnam: PASSED
+test_tmpnam_no_suffix: PASSED
+test_tmpdir: PASSED
+test_relative_path: PASSED
+test_various_names: PASSED
+test_rapid_sequential: PASSED (created 1000 unique files)
+test_concurrent_creation: PASSED (created 1000 unique files)
+
+All tests PASSED!
+PASS test_tempfile (exit status: 0)
