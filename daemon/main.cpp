@@ -1097,7 +1097,7 @@ bool Daemon::handle_file_chunk_env(Client *client, Msg *msg)
     assert(client->status == Client::TOINSTALL || client->status == Client::WAITINSTALL);
     assert(client->pipe_to_child >= 0);
 
-    if (msg* == Msg::FILE_CHUNK) {
+    if (*msg == Msg::FILE_CHUNK) {
         FileChunkMsg *fcmsg = static_cast<FileChunkMsg *>(msg);
         ssize_t len = fcmsg->len;
         off_t off = 0;
@@ -1129,7 +1129,7 @@ bool Daemon::handle_file_chunk_env(Client *client, Msg *msg)
         return true;
     }
 
-    if (msg* == Msg::END) {
+    if (*msg == Msg::END) {
         trace() << "received end of environment, waiting for child" << endl;
         close(client->pipe_to_child);
         client->pipe_to_child = -1;

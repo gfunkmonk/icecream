@@ -311,8 +311,8 @@ static UseCSMsg *get_server(MsgChannel *local_daemon)
             unexpected_msg << "Error 1 - reply timeout " << timeout;
         }
         else {
-            log_warning() << "reply was not expected use_cs " << (umsg ? (char)umsg->type : '0')  << endl;
-            unexpected_msg << "Error 1 - expected use_cs reply, but got " << (umsg ? (char)umsg->type : '0') << " instead";
+            log_warning() << "reply was not expected use_cs " << (umsg ? umsg->to_string() : Msg(Msg::UNKNOWN).to_string())  << endl;
+            unexpected_msg << "Error 1 - expected use_cs reply, but got " << (umsg ? umsg->to_string() : Msg(Msg::UNKNOWN).to_string()) << " instead";
         }
         delete umsg;
         throw client_error(1, unexpected_msg.str());
@@ -683,7 +683,7 @@ static int build_remote_int(CompileJob &job, UseCSMsg *usecs, MsgChannel *local_
 
         check_for_failure(msg, cserver);
 
-        if (*msg->type != Msg::COMPILE_RESULT) {
+        if (*msg != Msg::COMPILE_RESULT) {
             log_warning() << "waited for compile result, but got " << msg->to_string() << endl;
             delete msg;
             throw client_error(13, "Error 13 - did not get compile response message");
@@ -745,7 +745,7 @@ static int build_remote_int(CompileJob &job, UseCSMsg *usecs, MsgChannel *local_
         // Handle pending status messages, if any.
         if(cserver) {
             while(Msg* msg = cserver->get_msg(0, true)) {
-                if(msg* == Msg::STATUS_TEXT)
+                if(*msg == Msg::STATUS_TEXT)
                     log_error() << "Remote status (compiled on " << cserver->name << "): "
                                 << static_cast<StatusTextMsg*>(msg)->text << endl;
                 delete msg;
