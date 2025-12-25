@@ -1009,7 +1009,7 @@ static time_t prune_servers()
         }
 
         /* protocol version 27 and newer use TCP keepalive */
-        if (IS_PROTOCOL_27(*it)) {
+        if (IS_PROTOCOL_VERSION(27, *it)) {
             ++it;
             continue;
         }
@@ -1144,7 +1144,7 @@ static bool empty_queue(SchedulerAlgorithmName schedulerAlgorithm)
             break;
         }
     }
-    if(IS_PROTOCOL_37(job->submitter()) && use_cs == job->submitter())
+    if(IS_PROTOCOL_VERSION(37, job->submitter()) && use_cs == job->submitter())
     {
         NoCSMsg m2(job->id(), job->localClientId());
         if (!job->submitter()->send_msg(m2)) {
@@ -1259,7 +1259,7 @@ static bool handle_login(CompileServer *cs, Msg *_m)
     css.push_back(cs);
 
     /* Configure the daemon */
-    if (IS_PROTOCOL_24(cs)) {
+    if (IS_PROTOCOL_VERSION(24, cs)) {
         cs->send_msg(ConfCSMsg());
     }
 
@@ -1288,7 +1288,7 @@ static bool handle_relogin(MsgChannel *mc, Msg *_m)
     dbg << "]" << endl;
 
     /* Configure the daemon */
-    if (IS_PROTOCOL_24(cs)) {
+    if (IS_PROTOCOL_VERSION(24, cs)) {
         cs->send_msg(ConfCSMsg());
     }
 
@@ -1493,7 +1493,7 @@ static bool handle_stats(CompileServer *cs, Msg *_m)
 
     /* Before protocol 25, ping and stat handling was
        clutched together.  */
-    if (!IS_PROTOCOL_25(cs)) {
+    if (!IS_PROTOCOL_VERSION(25, cs)) {
         cs->last_talk = time(nullptr);
 
         if (cs->maxJobs() < 0) {
