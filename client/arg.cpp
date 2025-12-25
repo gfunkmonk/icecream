@@ -29,6 +29,7 @@
 #include <string.h>
 #include <errno.h>
 #include <assert.h>
+#include <unordered_set>
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -44,6 +45,9 @@ bool explicit_color_diagnostics;
 bool explicit_no_show_caret;
 
 #define CLIENT_DEBUG 0
+
+// Extra capacity for assembler argument buffer to reduce reallocations
+static const size_t ASSEMBLER_ARG_EXTRA_CAPACITY = 64;
 
 inline bool str_equal(const char* a, const char* b)
 {
@@ -124,7 +128,7 @@ static bool is_argument_with_space(const char* argument)
     //         -segcreate <arg1> <arg2> <arg3>
     //         -segprot <arg1> <arg2> <arg3>
     //       Move some arguments to Arg_Cpp or Arg_Local
-    static const char* const arguments[] = {
+    static const unordered_set<string> arguments = {
         "-dyld-prefix",
         "-gcc-toolchain",
         "--param",
@@ -223,13 +227,7 @@ static bool is_argument_with_space(const char* argument)
         "-index-store-path"
     };
 
-    for(const char* const arg : arguments) {
-        if (str_equal( arg, argument)) {
-            return true;
-        }
-    }
-
-    return false;
+    return arguments.find(argument) != arguments.end();
 }
 
 static bool analyze_assembler_arg(string &arg, list<string> *extrafiles)
@@ -415,6 +413,7 @@ bool analyse_argv(const char * const *argv, CompileJob &job, bool icerun, list<s
                 bool local = false;
                 string as_arg;
                 string remote_arg = "-Wa";
+                remote_arg.reserve(strlen(a) + ASSEMBLER_ARG_EXTRA_CAPACITY);
 
                 while (1) {
                     next_comma = strchr(pos, ',');
@@ -425,7 +424,8 @@ bool analyse_argv(const char * const *argv, CompileJob &job, bool icerun, list<s
                         as_arg = pos;
 
                     local = analyze_assembler_arg(as_arg, extrafiles);
-                    remote_arg += "," + as_arg;
+                    remote_arg += ',';
+                    remote_arg += as_arg;
 
                     if (!next_comma)
                         break;

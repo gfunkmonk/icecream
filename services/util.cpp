@@ -34,6 +34,9 @@
 
 using namespace std;
 
+// Initial capacity for command output buffer to reduce reallocations
+static const size_t COMMAND_OUTPUT_INITIAL_CAPACITY = 4096;
+
 /**
  * Return a pointer to the basename of the file (everything after the
  * last slash.)  If there is no slash, return the whole filename,
@@ -154,12 +157,12 @@ string read_command_output(const string& command, const vector<string>& args, in
         if(shell_exit_status(status) != 0)
             return string();
         string output;
+        output.reserve(COMMAND_OUTPUT_INITIAL_CAPACITY);
         char buf[1024];
         for (;;) {
             int r = read(pipes[0], buf, sizeof(buf) - 1 );
             if( r > 0 ) {
-                buf[r] = '\0';
-                output += buf;
+                output.append(buf, r); // More efficient by avoiding temporary string construction
             }
             if (r == 0)
                 break;
@@ -207,10 +210,9 @@ string read_command_line(const string& command, const vector<string>& args, int 
 {
     string output = read_command_output( command, args, output_fd );
     // get rid of the endline
-    if( output[ output.length() - 1 ] == '\n' )
-        return output.substr(0, output.length() - 1);
-    else
-        return output;
+    if( !output.empty() && output.back() == '\n' )
+        output.pop_back(); // More efficient than substr
+    return output;
 }
 
 bool pollfd_is_set(const vector<pollfd>& pollfds, int fd, int flags, bool check_errors)
