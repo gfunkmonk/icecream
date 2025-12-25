@@ -881,6 +881,7 @@ public:
     MonGetCSMsg()
         : GetCSMsg()
     { // overwrite
+        type = Msg::MON_GET_CS;
         clientid = job_id = 0;
     }
 

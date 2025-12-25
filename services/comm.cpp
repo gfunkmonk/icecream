@@ -720,7 +720,7 @@ void MsgChannel::set_error(bool silent)
         // so try to fetch last status from the other side, if available.
         set_error_recursion = true;
         Msg* msg = get_msg( 2, true );
-        if (msg && *msg == Msg::STATUS_TEXT) {
+        if (msg && *msg == Msg::|STATUS_TEXT) {
             log_error() << "remote status: "
                 << static_cast<StatusTextMsg*>(msg)->text << endl;
         }
