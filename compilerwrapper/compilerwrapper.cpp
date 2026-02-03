@@ -65,8 +65,10 @@ int main(int argc, char *argv[])
     bool haveclangarg = isclang;
     // 1 extra for -no-canonical-prefixes
     char **args = new char*[argc + 2];
-    args[0] = new char[strlen(argv[0]) + 20];
-    strcpy(args[0], argv[0]);
+    size_t args0_size = strlen(argv[0]) + 20;
+    args[0] = new char[args0_size];
+    strncpy(args[0], argv[0], args0_size - 1);
+    args[0][args0_size - 1] = '\0';
     char *separator = strrchr(args[0], '/');
 
     const auto resolve_compiler = [&] {
@@ -77,11 +79,11 @@ int main(int argc, char *argv[])
         }
 
         if (isclang) {
-            strcat(args[0], "clang");
+            strncat(args[0], "clang", args0_size - strlen(args[0]) - 1);
         } else if (iscxx) {
-            strcat(args[0], "g++.bin");
+            strncat(args[0], "g++.bin", args0_size - strlen(args[0]) - 1);
         } else {
-            strcat(args[0], "gcc.bin");
+            strncat(args[0], "gcc.bin", args0_size - strlen(args[0]) - 1);
         }
     };
 

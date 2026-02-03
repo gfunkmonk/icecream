@@ -287,10 +287,10 @@ int work_it(CompileJob &j, unsigned int job_stat[], MsgChannel *client, CompileR
 
         if (!clang) {
             argv[i++] = strdup("--param");
-            sprintf(buffer, "ggc-min-expand=%d", ggc_min_expand_heuristic(mem_limit));
+            snprintf(buffer, sizeof(buffer), "ggc-min-expand=%d", ggc_min_expand_heuristic(mem_limit));
             argv[i++] = strdup(buffer);
             argv[i++] = strdup("--param");
-            sprintf(buffer, "ggc-min-heapsize=%d", ggc_min_heapsize_heuristic(mem_limit));
+            snprintf(buffer, sizeof(buffer), "ggc-min-heapsize=%d", ggc_min_heapsize_heuristic(mem_limit));
             argv[i++] = strdup(buffer);
         }
 
@@ -299,7 +299,7 @@ int work_it(CompileJob &j, unsigned int job_stat[], MsgChannel *client, CompileR
         }
 
         if (!clang && j.dwarfFissionEnabled()) {
-            sprintf(buffer, "-fdebug-prefix-map=%s/=/", tmp_root.c_str());
+            snprintf(buffer, sizeof(buffer), "-fdebug-prefix-map=%s/=/", tmp_root.c_str());
             argv[i++] = strdup(buffer);
         }
 

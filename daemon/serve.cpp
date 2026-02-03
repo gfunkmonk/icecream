@@ -207,7 +207,7 @@ int handle_connection(const string &basedir, CompileJob *job,
 
         char *tmp_output = nullptr;
         char prefix_output[32]; // 20 for 2^64 + 6 for "icecc-" + 1 for trailing NULL
-        sprintf(prefix_output, "icecc-%u", job_id);
+        snprintf(prefix_output, sizeof(prefix_output), "icecc-%u", job_id);
 
         if (job->dwarfFissionEnabled() && (ret = dcc_make_tmpdir(&tmp_output)) == 0) {
             tmp_path = tmp_output;

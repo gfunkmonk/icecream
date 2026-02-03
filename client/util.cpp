@@ -174,7 +174,7 @@ bool dcc_lock_host()
         fname += pwd->pw_name;
     } else {
         char buffer[12];
-        sprintf(buffer, "%ld", (long)getuid());
+        snprintf(buffer, sizeof(buffer), "%ld", (long)getuid());
         fname += buffer;
     }
 
@@ -202,7 +202,7 @@ bool dcc_lock_host_slot(string fname, int lock, bool block)
 {
     if( lock > 0 ) { // 1st keep without the 0 for backwards compatibility
         char num[ 20 ];
-        sprintf( num, "%d", lock );
+        snprintf( num, sizeof(num), "%d", lock );
         fname += num;
     }
 
