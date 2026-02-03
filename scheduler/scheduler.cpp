@@ -335,36 +335,36 @@ static void handle_monitor_stats(CompileServer *cs, StatsMsg *m = nullptr)
 
     string msg;
     char buffer[1000];
-    sprintf(buffer, "Name:%s\n", cs->nodeName().c_str());
+    snprintf(buffer, sizeof(buffer), "Name:%s\n", cs->nodeName().c_str());
     msg += buffer;
-    sprintf(buffer, "IP:%s\n", cs->name.c_str());
+    snprintf(buffer, sizeof(buffer), "IP:%s\n", cs->name.c_str());
     msg += buffer;
-    sprintf(buffer, "MaxJobs:%d\n", cs->maxJobs());
+    snprintf(buffer, sizeof(buffer), "MaxJobs:%d\n", cs->maxJobs());
     msg += buffer;
-    sprintf(buffer, "NoRemote:%s\n", cs->noRemote() ? "true" : "false");
+    snprintf(buffer, sizeof(buffer), "NoRemote:%s\n", cs->noRemote() ? "true" : "false");
     msg += buffer;
-    sprintf(buffer, "Platform:%s\n", cs->hostPlatform().c_str());
+    snprintf(buffer, sizeof(buffer), "Platform:%s\n", cs->hostPlatform().c_str());
     msg += buffer;
-    sprintf(buffer, "Version:%d\n", cs->maximum_remote_protocol);
+    snprintf(buffer, sizeof(buffer), "Version:%d\n", cs->maximum_remote_protocol);
     msg += buffer;
-    sprintf(buffer, "Features:%s\n", supported_features_to_string(cs->supportedFeatures()).c_str());
+    snprintf(buffer, sizeof(buffer), "Features:%s\n", supported_features_to_string(cs->supportedFeatures()).c_str());
     msg += buffer;
-    sprintf(buffer, "Speed:%f\n", server_speed(cs));
+    snprintf(buffer, sizeof(buffer), "Speed:%f\n", server_speed(cs));
     msg += buffer;
 
     if (m) {
-        sprintf(buffer, "Load:%d\n", m->load);
+        snprintf(buffer, sizeof(buffer), "Load:%d\n", m->load);
         msg += buffer;
-        sprintf(buffer, "LoadAvg1:%u\n", m->loadAvg1);
+        snprintf(buffer, sizeof(buffer), "LoadAvg1:%u\n", m->loadAvg1);
         msg += buffer;
-        sprintf(buffer, "LoadAvg5:%u\n", m->loadAvg5);
+        snprintf(buffer, sizeof(buffer), "LoadAvg5:%u\n", m->loadAvg5);
         msg += buffer;
-        sprintf(buffer, "LoadAvg10:%u\n", m->loadAvg10);
+        snprintf(buffer, sizeof(buffer), "LoadAvg10:%u\n", m->loadAvg10);
         msg += buffer;
-        sprintf(buffer, "FreeMem:%u\n", m->freeMem);
+        snprintf(buffer, sizeof(buffer), "FreeMem:%u\n", m->freeMem);
         msg += buffer;
     } else {
-        sprintf(buffer, "Load:%u\n", cs->load());
+        snprintf(buffer, sizeof(buffer), "Load:%u\n", cs->load());
         msg += buffer;
     }
 
@@ -1630,15 +1630,15 @@ static bool handle_line(CompileServer *cs, Msg *_m)
     if (cmd == "listcs") {
         for (CompileServer * const it : css) {
             char buffer[1000];
-            sprintf(buffer, " (%s:%u) ", it->name.c_str(), it->remotePort());
+            snprintf(buffer, sizeof(buffer), " (%s:%u) ", it->name.c_str(), it->remotePort());
             line = " " + it->nodeName() + buffer;
             line += "[" + it->hostPlatform() + "] speed=";
-            sprintf(buffer, "%.2f jobs=%d/%d load=%u", server_speed(it),
+            snprintf(buffer, sizeof(buffer), "%.2f jobs=%d/%d load=%u", server_speed(it),
                     it->currentJobCount(), it->maxJobs(), it->load());
             line += buffer;
 
             if (it->busyInstalling()) {
-                sprintf(buffer, " busy installing since %ld s",  time(nullptr) - it->busyInstalling());
+                snprintf(buffer, sizeof(buffer), " busy installing since %ld s",  time(nullptr) - it->busyInstalling());
                 line += buffer;
             }
 

@@ -796,7 +796,7 @@ md5_for_file(const string & file)
     char digest_cache[33];
 
     for (int di = 0; di < 16; ++di) {
-        sprintf(digest_cache + di * 2, "%02x", digest[di]);
+        snprintf(digest_cache + di * 2, 3, "%02x", digest[di]);
     }
 
     digest_cache[32] = 0;
@@ -1002,7 +1002,7 @@ int build_remote(CompileJob &job, MsgChannel *local_daemon, const Environments &
         dcc_unlock();
 
         char rand_seed[400]; // "designed to be oversized" (Levi's)
-        sprintf(rand_seed, "-frandom-seed=%d", rand());
+        snprintf(rand_seed, sizeof(rand_seed), "-frandom-seed=%d", rand());
         job.appendFlag(rand_seed, Arg_Remote);
 
         GetCSMsg getcs(envs, get_absfilename(job.inputFile()), job.language(), torepeat,
