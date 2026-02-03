@@ -78,13 +78,12 @@ int main(int argc, char *argv[])
             separator[1] = '\0';    // after the separator
         }
 
-        size_t current_len = strlen(args[0]);
         if (isclang) {
-            strncat(args[0], "clang", args0_size - current_len - 1);
+            strncat(args[0], "clang", args0_size - strlen(args[0]) - 1);
         } else if (iscxx) {
-            strncat(args[0], "g++.bin", args0_size - current_len - 1);
+            strncat(args[0], "g++.bin", args0_size - strlen(args[0]) - 1);
         } else {
-            strncat(args[0], "gcc.bin", args0_size - current_len - 1);
+            strncat(args[0], "gcc.bin", args0_size - strlen(args[0]) - 1);
         }
     };
 
