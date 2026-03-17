@@ -50,6 +50,7 @@
 #include <signal.h>
 #include <cassert>
 #include <limits.h>
+#include <memory>
 #include <sys/time.h>
 #include <comm.h>
 #include <vector>
@@ -506,7 +507,7 @@ int main(int argc, char **argv)
             log_warning() << "Local daemon is too old to handle extra files." << endl;
             local = true;
         } else {
-            Msg *umsg = nullptr;
+            std::unique_ptr<Msg> umsg;
             string compiler;
             if( IS_PROTOCOL_VERSION(41, local_daemon))
                 compiler = get_absfilename( find_compiler( job ));
@@ -522,13 +523,13 @@ int main(int argc, char **argv)
                 local = true;
             } else {
                 // the timeout is high because it creates the native version
-                umsg = local_daemon->get_msg(4 * 60);
+                umsg.reset(local_daemon->get_msg(4 * 60));
             }
 
             string native;
 
             if (umsg && umsg->type == M_NATIVE_ENV) {
-                native = static_cast<UseNativeEnvMsg*>(umsg)->nativeVersion;
+                native = static_cast<UseNativeEnvMsg*>(umsg.get())->nativeVersion;
             }
 
             if (native.empty() || ::access(native.c_str(), R_OK) < 0) {
@@ -538,8 +539,6 @@ int main(int argc, char **argv)
                 envs.push_back(make_pair(job.targetPlatform(), native));
                 log_info() << "native " << native << endl;
             }
-
-            delete umsg;
         }
 
         // we set it to local so we tell the local daemon about it - avoiding file locking
@@ -547,11 +546,11 @@ int main(int argc, char **argv)
             local = true;
         }
 
-        for (Environments::const_iterator it = envs.begin(); it != envs.end(); ++it) {
-            trace() << "env: " << it->first << " '" << it->second << "'" << endl;
+        for (const auto& env : envs) {
+            trace() << "env: " << env.first << " '" << env.second << "'" << endl;
 
-            if (::access(it->second.c_str(), R_OK) < 0) {
-                log_error() << "can't read environment " << it->second << endl;
+            if (::access(env.second.c_str(), R_OK) < 0) {
+                log_error() << "can't read environment " << env.second << endl;
                 local = true;
             }
         }
@@ -619,26 +618,24 @@ int main(int argc, char **argv)
     if (local) {
         log_block b("building_local");
         struct rusage ru;
-        Msg *startme = nullptr;
+        std::unique_ptr<Msg> startme;
 
         /* Inform the daemon that we like to start a job.  */
         if (local_daemon->send_msg(JobLocalBeginMsg(0, get_absfilename(job.outputFile()),fulljob,get_niceness()))) {
             /* Now wait until the daemon gives us the start signal.  40 minutes
                should be enough for all normal compile or link jobs, but with expensive jobs
                (which fulljobs may likely be, e.g. LTO linking) use an even larger timeout.  */
-            startme = local_daemon->get_msg(fulljob ? 120 * 60 : 40 * 60);
+            startme.reset(local_daemon->get_msg(fulljob ? 120 * 60 : 40 * 60));
         }
 
         /* If we can't talk to the daemon anymore we need to fall back
            to lock file locking.  */
         if (!startme || startme->type != M_JOB_LOCAL_BEGIN) {
-            delete startme;
             delete local_daemon;
             return build_local(job, nullptr);
         }
 
         ret = build_local(job, local_daemon, &ru);
-        delete startme;
     }
 
     delete local_daemon;

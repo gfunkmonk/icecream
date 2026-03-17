@@ -44,6 +44,7 @@
 #include <errno.h>
 #include <map>
 #include <algorithm>
+#include <memory>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <vector>
@@ -302,26 +303,22 @@ static UseCSMsg *get_server(MsgChannel *local_daemon)
     int timeout = 4 * 60;
     if( get_niceness() > 0 ) // low priority jobs may take longer to get a slot assigned
         timeout = 60 * 60;
-    Msg *umsg = local_daemon->get_msg( timeout );
+    std::unique_ptr<Msg> umsg(local_daemon->get_msg( timeout ));
 
     if (!umsg || umsg->type != M_USE_CS) {
-        //log_warning() << "reply was not expected use_cs " << (umsg ? (char)umsg->type : '0')  << endl;
         ostringstream unexpected_msg;
-        //unexpected_msg << "Error 1 - expected use_cs reply, but got " << (umsg ? (char)umsg->type : '0') << " instead";
         if (!umsg) {
             log_warning() << "reply timeout " << timeout << endl;
             unexpected_msg << "Error 1 - reply timeout " << timeout;
         }
         else {
-            log_warning() << "reply was not expected use_cs " << (umsg ? (char)umsg->type : '0')  << endl;
-            unexpected_msg << "Error 1 - expected use_cs reply, but got " << (umsg ? (char)umsg->type : '0') << " instead";
+            log_warning() << "reply was not expected use_cs " << (char)umsg->type  << endl;
+            unexpected_msg << "Error 1 - expected use_cs reply, but got " << (char)umsg->type << " instead";
         }
-        delete umsg;
         throw client_error(1, unexpected_msg.str());
     }
 
-    UseCSMsg *usecs = dynamic_cast<UseCSMsg *>(umsg);
-    return usecs;
+    return dynamic_cast<UseCSMsg *>(umsg.release());
 }
 
 static void check_for_failure(Msg *msg, MsgChannel *cserver)
@@ -427,21 +424,19 @@ static void receive_file(const string& output_file, MsgChannel* cserver)
         throw client_error(31, "Error 31 - " + errmsg);
     }
 
-    Msg* msg = nullptr;
+    std::unique_ptr<Msg> msg;
     size_t uncompressed = 0;
     size_t compressed = 0;
 
     while (1) {
-        delete msg;
-
-        msg = cserver->get_msg(40);
+        msg.reset(cserver->get_msg(40));
 
         if (!msg) {   // the network went down?
             unlink(tmp_file.c_str());
             throw client_error(19, "Error 19 - (network failure?)");
         }
 
-        check_for_failure(msg, cserver);
+        check_for_failure(msg.get(), cserver);
 
         if (msg->type == M_END) {
             break;
@@ -449,18 +444,16 @@ static void receive_file(const string& output_file, MsgChannel* cserver)
 
         if (msg->type != M_FILE_CHUNK) {
             unlink(tmp_file.c_str());
-            delete msg;
             throw client_error(20, "Error 20 - unexpected message");
         }
 
-        FileChunkMsg *fcmsg = dynamic_cast<FileChunkMsg*>(msg);
+        FileChunkMsg *fcmsg = dynamic_cast<FileChunkMsg*>(msg.get());
         compressed += fcmsg->compressed;
         uncompressed += fcmsg->len;
 
         if (write(obj_fd, fcmsg->buffer, fcmsg->len) != (ssize_t)fcmsg->len) {
             log_perror("Error writing file: ");
             unlink(tmp_file.c_str());
-            delete msg;
             throw client_error(21, "Error 21 - error writing file");
         }
     }
@@ -468,8 +461,6 @@ static void receive_file(const string& output_file, MsgChannel* cserver)
     if (uncompressed)
         trace() << "got " << compressed << " bytes ("
                 << (compressed * 100 / uncompressed) << "%)" << endl;
-
-    delete msg;
 
     if (close(obj_fd) != 0) {
         log_perror("Failed to close temporary file: ");
@@ -673,45 +664,41 @@ static int build_remote_int(CompileJob &job, UseCSMsg *usecs, MsgChannel *local_
             throw client_error(12, "Error 12 - failed to send file to remote");
         }
 
-        Msg *msg;
+        std::unique_ptr<Msg> msg;
         {
             log_block wait_cs("wait for cs");
-            msg = cserver->get_msg(12 * 60);
+            msg.reset(cserver->get_msg(12 * 60));
 
             if (!msg) {
                 throw client_error(14, "Error 14 - error reading message from remote");
             }
         }
 
-        check_for_failure(msg, cserver);
+        check_for_failure(msg.get(), cserver);
 
         if (msg->type != M_COMPILE_RESULT) {
             log_warning() << "waited for compile result, but got " << (char)msg->type << endl;
-            delete msg;
             throw client_error(13, "Error 13 - did not get compile response message");
         }
 
-        CompileResultMsg *crmsg = dynamic_cast<CompileResultMsg*>(msg);
+        CompileResultMsg *crmsg = dynamic_cast<CompileResultMsg*>(msg.get());
         assert(crmsg);
 
         status = crmsg->status;
 
         if (status && crmsg->was_out_of_memory) {
-            delete crmsg;
             log_warning() << "the server ran out of memory, recompiling locally" << endl;
             throw remote_error(101, "Error 101 - the server ran out of memory, recompiling locally");
         }
 
         if (output) {
             if ((!crmsg->out.empty() || !crmsg->err.empty()) && output_needs_workaround(job)) {
-                delete crmsg;
                 log_warning() << "command needs stdout/stderr workaround, recompiling locally" << endl;
                 log_warning() << "(set ICECC_CARET_WORKAROUND=0 to override)" << endl;
                 throw remote_error(102, "Error 102 - command needs stdout/stderr workaround, recompiling locally");
             }
 
             if (crmsg->err.find("file not found") != string::npos) {
-                delete crmsg;
                 log_warning() << "remote is missing file, recompiling locally" << endl;
                 throw remote_error(104, "Error 104 - remote is missing file, recompiling locally");
             }
@@ -730,7 +717,7 @@ static int build_remote_int(CompileJob &job, UseCSMsg *usecs, MsgChannel *local_
         }
 
         bool have_dwo_file = crmsg->have_dwo_file;
-        delete crmsg;
+        msg.reset(); // release crmsg before receive_file calls
 
         assert(!job.outputFile().empty());
 
@@ -930,14 +917,14 @@ int build_remote(CompileJob &job, MsgChannel *local_daemon, const Environments &
         string fake_filename;
         list<string> args = job.remoteFlags();
 
-        for (list<string>::const_iterator it = args.begin(); it != args.end(); ++it) {
-            fake_filename += "/" + *it;
+        for (const auto& arg : args) {
+            fake_filename += "/" + arg;
         }
 
         args = job.restFlags();
 
-        for (list<string>::const_iterator it = args.begin(); it != args.end(); ++it) {
-            fake_filename += "/" + *it;
+        for (const auto& arg : args) {
+            fake_filename += "/" + arg;
         }
 
         fake_filename += get_absfilename(job.inputFile());
@@ -1017,15 +1004,11 @@ int build_remote(CompileJob &job, MsgChannel *local_daemon, const Environments &
         }
 
         map<pid_t, int> jobmap;
-        CompileJob *jobs = new CompileJob[torepeat];
-        UseCSMsg **umsgs = new UseCSMsg*[torepeat];
+        vector<CompileJob> jobs(torepeat);
+        vector<UseCSMsg*> umsgs(torepeat, nullptr);
 
         bool misc_error = false;
-        int *exit_codes = new int[torepeat];
-
-        for (int i = 0; i < torepeat; i++) { // init
-            exit_codes[i] = 42;
-        }
+        vector<int> exit_codes(torepeat, 42);
 
 
         for (int i = 0; i < torepeat; i++) {
@@ -1192,10 +1175,6 @@ int build_remote(CompileJob &job, MsgChannel *local_daemon, const Environments &
         }
 
         int ret = exit_codes[0];
-
-        delete [] umsgs;
-        delete [] jobs;
-        delete [] exit_codes;
 
         if (misc_error) {
             throw client_error(27, "Error 27 - misc error");
