@@ -113,6 +113,12 @@ static bool analyze_program(const char *name, CompileJob &job, bool& icerun)
         return true;
     }
 
+    // dpcpp is equivalent to icpx -fsycl; SYCL compilation cannot be distributed
+    if (compiler_name.find("dpcpp") != string::npos) {
+        log_info() << "dpcpp implies -fsycl, building locally." << endl;
+        return true;
+    }
+
     return false;
 }
 
@@ -337,7 +343,8 @@ bool analyse_argv(const char * const *argv, CompileJob &job, bool icerun, list<s
                        || !strcmp(a, "-combine")
                        || !strcmp(a, "-fsyntax-only")
                        || !strncmp(a, "-ftime-report", strlen("-ftime-report"))
-                       || !strcmp(a, "-ftime-trace")) {
+                       || !strcmp(a, "-ftime-trace")
+                       || !strcmp(a, "-fsycl")) {
                 always_local = true;
                 args.append(a, Arg_Local);
                 log_warning() << "argument " << a << ", building locally" << endl;

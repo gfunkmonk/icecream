@@ -158,7 +158,11 @@ bool compiler_is_clang(const CompileJob &job)
         return true;
     }
 #endif
-    return job.compilerName().find("clang") != string::npos;
+    const string &name = job.compilerName();
+    return name.find("clang") != string::npos
+        || name.find("icx") != string::npos
+        || name.find("icpx") != string::npos
+        || name.find("dpcpp") != string::npos;
 }
 
 /*

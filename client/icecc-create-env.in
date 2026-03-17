@@ -28,11 +28,13 @@ usage ()
     echo "Usage: $0 <compiler_binary> [extra_options]"
     echo "For GCC, pass the the gcc binary, the matching g++ will be used automatically."
     echo "For Clang, pass the clang binary."
+    echo "For Intel ICX/ICPX, pass the icx or icpx binary."
     echo "Use --addfile <file> to add extra files."
     echo "Use --compression <type> to set tarball type (none,gzip,bzip2,zstd,xz,pigz)."
     echo "For backwards compatibility, the following is also supported:"
     echo "$0 --gcc <gcc_path> <g++_path>"
     echo "$0 --clang <clang_path>"
+    echo "$0 --icx <icx_or_icpx_path>"
 }
 
 is_contained ()
@@ -306,24 +308,31 @@ elif test "$1" = "--clang"; then
         shift
         gcc=1
     fi
+elif test "$1" = "--icx"; then
+    shift
+    # Intel ICX/ICPX compilers are clang-based, treat as clang for environment purposes
+    added_clang=$($1 -print-prog-name=$(basename $1))
+    shift
+    added_compilerwrapper=@PKGLIBEXECDIR@/compilerwrapper
+    clang=1
 else
     if test -z "$1"; then
         usage
         exit 1
     fi
     # We got just a binary, find out what compiler it is and bypass any possible wrappers.
-    # __clang__ expands to 1 if compiler is Clang
+    # __INTEL_CLANG_COMPILER is defined by Intel ICX/ICPX compilers
+    # __clang__ expands to 1 if compiler is Clang (including Intel ICX/ICPX)
     # __GNUC__ expands to the main version number (and is valid also with Clang)
-    test_output=$(echo "clang __clang__ gcc __GNUC__" | "$1" -E -)
+    test_output=$(echo "intel __INTEL_CLANG_COMPILER clang __clang__ gcc __GNUC__" | "$1" -E -)
     if test $? -ne 0; then
         echo "$1" is not a compiler.
         exit 1
     fi
-    if echo "$test_output" | grep -q '^clang 1 gcc.*'; then
+    # Both Intel clang (icx/icpx) and regular clang expand __clang__ to 1.
+    # Intel also expands __INTEL_CLANG_COMPILER; both are clang-based, same env creation.
+    if echo "$test_output" | grep -q 'clang 1 gcc'; then
         clang=1
-        # With clang, -print-prog-name gives the full path to the actual clang binary,
-        # allowing to bypass any possible wrapper script etc. Note we must pass
-        # just the binary name, not full path.
         added_clang=$($1 -print-prog-name=$(basename $1))
         added_compilerwrapper=@PKGLIBEXECDIR@/compilerwrapper
     elif echo "$test_output" | grep -q 'clang __clang__ gcc.*'; then

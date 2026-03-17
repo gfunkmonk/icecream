@@ -1308,6 +1308,66 @@ test_build_native_helper()
     return 0
 }
 
+# Check that icecc --build-native works with Intel ICX/ICPX compilers.
+buildnativetest_icx()
+{
+    if ! command -v icx >/dev/null 2>&1; then
+        echo Intel ICX compiler not found, skipping build-native ICX tests.
+        skipped_tests="$skipped_tests build-native-icx"
+        return
+    fi
+    echo Running icecc --build-native ICX test.
+    reset_logs "local" "Build native ICX"
+    test_build_native_helper $(command -v icx) 1
+    if test $? -ne 0; then
+        echo Icecc --build-native ICX test failed.
+        cat "$testdir"/icecc-build-native-output
+        stop_ice 0
+        abort_tests
+    fi
+    echo Icecc --build-native ICX test successful.
+    echo
+
+    if command -v icpx >/dev/null 2>&1; then
+        echo Running icecc --build-native ICPX test.
+        reset_logs "local" "Build native ICPX"
+        test_build_native_helper $(command -v icpx) 1
+        if test $? -ne 0; then
+            echo Icecc --build-native ICPX test failed.
+            cat "$testdir"/icecc-build-native-output
+            stop_ice 0
+            abort_tests
+        fi
+        echo Icecc --build-native ICPX test successful.
+        echo
+    fi
+
+    # Test the --icx explicit flag.
+    echo Running icecc-create-env --icx test.
+    reset_logs "local" "create-env --icx"
+    pushd "$testdir" >/dev/null
+    ${icecc_create_env} --icx $(command -v icx) > "$testdir"/icecc-build-native-output 2>&1
+    if test $? -ne 0; then
+        echo icecc-create-env --icx test failed.
+        cat "$testdir"/icecc-build-native-output
+        popd >/dev/null
+        stop_ice 0
+        abort_tests
+    fi
+    local tarball=$(sed -En '/^creating (.*\.tar.*)/s//\1/p' "$testdir"/icecc-build-native-output)
+    if test -z "$tarball"; then
+        echo icecc-create-env --icx produced no tarball.
+        cat "$testdir"/icecc-build-native-output
+        popd >/dev/null
+        stop_ice 0
+        abort_tests
+    fi
+    rm -f $tarball "$testdir"/icecc-build-native-output
+    popd >/dev/null
+    echo icecc-create-env --icx test successful.
+    echo
+}
+
 # Check that icecc recursively invoking itself is detected.
 recursive_test()
 {
@@ -2111,6 +2171,7 @@ if test -n "$valgrind"; then
 fi
 
 buildnativetest
+buildnativetest_icx
 
 echo Starting icecream.
 reset_logs local "Starting"
@@ -2565,6 +2626,37 @@ buildnativewithwrappertest
 
 if test -n "$valgrind"; then
     rm -f "$testdir"/valgrind.log
+fi
+
+# Intel ICX/ICPX compiler tests
+if command -v icx >/dev/null 2>&1 && command -v icpx >/dev/null 2>&1; then
+    echo "Running Intel ICX/ICPX compiler tests."
+    # icx -c (C, should compile remotely)
+    run_ice "$testdir/plain.o" "remote" 0 $(command -v icx) -Wall -c plain.c -o "$testdir/"plain.o
+    # icpx -c (C++, should compile remotely)
+    run_ice "$testdir/plain.o" "remote" 0 $(command -v icpx) -Wall -c plain.cpp -o "$testdir/"plain.o
+    # icpx with optimization and debug flags
+    run_ice "$testdir/plain.o" "remote" 0 $(command -v icpx) -Wall -Werror -O2 -g -c plain.cpp -o "$testdir/"plain.o
+    # icx with includes
+    run_ice "$testdir/includes.o" "remote" 0 $(command -v icpx) -Wall -Werror -c includes.cpp -o "$testdir"/includes.o
+    # icpx -fsycl must build locally (SYCL cannot be distributed)
+    run_ice "$testdir/plain.o" "local" 0 $(command -v icpx) -fsycl -c plain.cpp -o "$testdir/"plain.o
+    # Verify -target is auto-injected for icpx (clang-like behavior)
+    if test -z "$chroot_disabled"; then
+        run_ice "$testdir/plain.o" "remote" 0 $(command -v icpx) -Wall -Werror -c plain.cpp -o "$testdir/"plain.o
+        check_section_log_message remoteice1 "remote compile arguments:.* -target "
+    fi
+    # dpcpp must build locally (dpcpp implies -fsycl)
+    if command -v dpcpp >/dev/null 2>&1; then
+        run_ice "$testdir/plain.o" "local" 0 $(command -v dpcpp) -c plain.cpp -o "$testdir/"plain.o
+    else
+        skipped_tests="$skipped_tests dpcpp_local"
+    fi
+    echo "Intel ICX/ICPX compiler tests successful."
+    echo
+else
+    echo "Intel ICX/ICPX compilers not found, skipping ICX tests."
+    skipped_tests="$skipped_tests icx_tests"
 fi
 
 ignore=

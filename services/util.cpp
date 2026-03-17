@@ -72,6 +72,11 @@ string find_prefix(const string &basename)
     Including a possible prefix or postfix separated by '-' (e.g. aarch64-suse-linux-gcc-6)
  - clang/clang++
     Including a possible prefix or postfix separated by '-' (e.g. clang-8).
+ - icx/icpx
+    Intel oneAPI DPC++/C++ compilers (clang-based). Including a possible postfix
+    separated by '-' (e.g. icx-2026).
+ - dpcpp
+    Deprecated Intel SYCL compiler (equivalent to icpx -fsycl).
 */
 
 bool is_c_compiler(const string& compiler)
@@ -79,6 +84,9 @@ bool is_c_compiler(const string& compiler)
     string name = find_basename(compiler);
     if( name.find("++") != string::npos )
         return false;
+    // "icx" must not match "icpx"
+    if( name.find("icx") != string::npos && name.find("icpx") == string::npos )
+        return true;
     return name.find("gcc") != string::npos || name.find("clang") != string::npos
         || name == "cc";
 }
@@ -87,6 +95,7 @@ bool is_cpp_compiler(const string& compiler)
 {
     string name = find_basename(compiler);
     return name.find("g++") != string::npos || name.find("clang++") != string::npos
+        || name.find("icpx") != string::npos || name.find("dpcpp") != string::npos
         || name == "c++";
 }
 
@@ -97,10 +106,19 @@ string get_c_compiler(const string& compiler)
     size_t slash = compiler.rfind('/');
     size_t pos = compiler.rfind( "++" );
     if( pos == string::npos || pos < slash )
+    {
+        // Already a C compiler (no "++"), but handle dpcpp specially
+        pos = compiler.rfind( "dpcpp" );
+        if( pos != string::npos && pos >= slash + 1 )
+            return compiler.substr( 0, pos ) + "icx" + compiler.substr( pos + strlen( "dpcpp" ));
         return compiler;
+    }
     pos = compiler.rfind( "clang++" );
     if( pos != string::npos && pos >= slash + 1 )
         return compiler.substr( 0, pos ) + "clang" + compiler.substr( pos + strlen( "clang++" ));
+    pos = compiler.rfind( "icpx" );
+    if( pos != string::npos && pos >= slash + 1 )
+        return compiler.substr( 0, pos ) + "icx" + compiler.substr( pos + strlen( "icpx" ));
     pos = compiler.rfind( "g++" ); // g++ must go after clang++, it's a substring
     if( pos != string::npos && pos >= slash + 1 )
         return compiler.substr( 0, pos ) + "gcc" + compiler.substr( pos + strlen( "g++" ));
@@ -118,10 +136,22 @@ string get_cpp_compiler(const string& compiler)
     size_t slash = compiler.rfind('/');
     size_t pos = compiler.rfind( "++" );
     if( pos != string::npos && pos >= slash + 1 )
+    {
+        // Already a C++ compiler, but handle dpcpp→icpx conversion
+        pos = compiler.rfind( "dpcpp" );
+        if( pos != string::npos && pos >= slash + 1 )
+            return compiler.substr( 0, pos ) + "icpx" + compiler.substr( pos + strlen( "dpcpp" ));
         return compiler;
+    }
+    pos = compiler.rfind( "dpcpp" );
+    if( pos != string::npos && pos >= slash + 1 )
+        return compiler.substr( 0, pos ) + "icpx" + compiler.substr( pos + strlen( "dpcpp" ));
     pos = compiler.rfind( "gcc" );
     if( pos != string::npos && pos >= slash + 1 )
         return compiler.substr( 0, pos ) + "g++" + compiler.substr( pos + strlen( "gcc" ));
+    pos = compiler.rfind( "icx" );
+    if( pos != string::npos && pos >= slash + 1 && compiler.find("icpx") == string::npos )
+        return compiler.substr( 0, pos ) + "icpx" + compiler.substr( pos + strlen( "icx" ));
     pos = compiler.rfind( "clang" );
     if( pos != string::npos && pos >= slash + 1 )
         return compiler.substr( 0, pos ) + "clang++" + compiler.substr( pos + strlen( "clang" ));

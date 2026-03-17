@@ -104,6 +104,21 @@ But you will have to rely on homogeneous networks then (see below).
 If you want an overview of your icecream compile cluster, or if you just want
 funny stats, you might want to run "icemon" (from a separate repository/package).
 
+### Intel ICX/ICPX compilers
+
+Icecream supports Intel's oneAPI DPC++/C++ compilers (`icx`, `icpx`, and the
+deprecated `dpcpp`). These compilers are clang-based and work through the
+standard distributed compilation flow:
+
+     icpx -c myfile.cpp -o myfile.o   # distributed normally via icecream
+     icx -c myfile.c -o myfile.o      # distributed normally via icecream
+
+**SYCL note:** Compilation with `-fsycl` (or using `dpcpp`, which implies
+`-fsycl`) is always performed locally. The SYCL compilation pipeline uses
+`clang-offload-bundler` which is incompatible with icecream's
+preprocess-then-remote-compile flow. Regular (non-SYCL) `icx`/`icpx`
+compilations are distributed normally.
+
 ### make it persistent
 
 If you restart a computer, you still want it to be in the icecream

@@ -2088,6 +2088,14 @@ void NoCSMsg::send_to_channel(MsgChannel *c) const
     *c << client_id;
 }
 
+// Intel ICX/ICPX/DPCPP compilers are clang-based and use the same remote binary.
+static bool is_clang_like(const string &name)
+{
+    return name.find("clang") != string::npos
+        || name.find("icx") != string::npos
+        || name.find("icpx") != string::npos
+        || name.find("dpcpp") != string::npos;
+}
 
 void CompileFileMsg::fill_from_channel(MsgChannel *c)
 {
@@ -2162,7 +2170,7 @@ void CompileFileMsg::send_to_channel(MsgChannel *c) const
         if (IS_PROTOCOL_VERSION(30, c)) {
             *c << job->remoteFlags();
         } else {
-            if (job->compilerName().find("clang") != string::npos) {
+            if (is_clang_like(job->compilerName())) {
                 // Hack for compilerwrapper.
                 std::list<std::string> flags = job->remoteFlags();
                 flags.push_front("clang");
@@ -2196,7 +2204,7 @@ void CompileFileMsg::send_to_channel(MsgChannel *c) const
 // hardcoded).  For clang, the binary is just clang for both C/C++.
 string CompileFileMsg::remote_compiler_name() const
 {
-    if (job->compilerName().find("clang") != string::npos) {
+    if (is_clang_like(job->compilerName())) {
         return "clang";
     }
 
