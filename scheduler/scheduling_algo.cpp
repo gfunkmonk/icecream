@@ -6,7 +6,6 @@
 #endif
 
 #include <algorithm>
-#include <climits>
 #include <limits>
 
 using namespace std;
@@ -53,14 +52,21 @@ CompileServer *pick_server_round_robin(list<CompileServer *> &eligible)
     return selected;
 }
 
-CompileServer *pick_server_least_busy(list<CompileServer *> &eligible)
+CompileServer *pick_server_least_busy(list<CompileServer *> &eligible,
+                                      unsigned int submission_weight)
 {
-    unsigned long min_load = ULONG_MAX;
+    float min_load = -1.0f;
     list<CompileServer *> selected_list;
 
-    // We want to pick the server with the fewest run jobs, but in a round-robin
-    // fashion if multiple happen to be the least-busy so we can distribute the
-    // load out better.
+    auto server_load = [submission_weight](CompileServer *cs) -> float {
+        float effective_jobs = std::max(0, cs->currentJobCount());
+        if (submission_weight > 0) {
+            effective_jobs += std::max(0, cs->submittedJobsCount())
+                             / (float)submission_weight;
+        }
+        return effective_jobs / cs->maxJobs();
+    };
+
     for (CompileServer * const cs: eligible) {
 #if DEBUG_SCHEDULER > 1
         trace()
@@ -69,34 +75,29 @@ CompileServer *pick_server_least_busy(list<CompileServer *> &eligible)
             << endl;
 #endif
         if (cs->maxJobs()) {
-            unsigned long cs_load = 0;
+            float load = server_load(cs);
 
-            // Calculate the ceiling of the current job load ratio
-            if (cs->currentJobCount()) {
-                cs_load = 1 + ((cs->currentJobCount() - 1) / cs->maxJobs());
-            }
-
-            if (cs_load < min_load) {
-                min_load = cs_load;
+            if (min_load < 0 || load < min_load) {
+                min_load = load;
             }
         }
     }
 
-    if (min_load == ULONG_MAX) {
+    if (min_load < 0) {
         min_load = 0;
     }
+
+    // Tolerance for float comparison — loads are in [0, ~N] range
+    const float epsilon = 1e-6f;
 
     std::copy_if(
         eligible.begin(),
         eligible.end(),
         std::back_inserter(selected_list),
-        [=](CompileServer* cs) {
+        [&](CompileServer* cs) {
             if (!cs->maxJobs())
                 return false;
-            unsigned long cs_load = 0;
-            if (cs->currentJobCount())
-                cs_load = 1 + ((cs->currentJobCount() - 1) / cs->maxJobs());
-            return cs_load == min_load;
+            return server_load(cs) <= min_load + epsilon;
         });
 
 #if DEBUG_SCHEDULER > 1

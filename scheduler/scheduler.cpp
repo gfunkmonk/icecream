@@ -793,7 +793,7 @@ static CompileServer *pick_server_fastest(Job *job, list<CompileServer *> &eligi
     return bestpre;
 }
 
-static CompileServer *pick_server(Job *job, SchedulerAlgorithmName schedulerAlgorithm)
+static CompileServer *pick_server(Job *job, SchedulerAlgorithmName schedulerAlgorithm, unsigned int submission_weight)
 {
 #if DEBUG_SCHEDULER > 0
     /* consistency checking for now */
@@ -872,7 +872,7 @@ static CompileServer *pick_server(Job *job, SchedulerAlgorithmName schedulerAlgo
             selected = pick_server_round_robin(eligible);
             break;
         case SchedulerAlgorithmName::LEAST_BUSY:
-            selected = pick_server_least_busy(eligible);
+            selected = pick_server_least_busy(eligible, submission_weight);
             break;
         case SchedulerAlgorithmName::FASTEST:
             selected = pick_server_fastest(job, eligible);
@@ -977,7 +977,7 @@ static time_t prune_servers()
     return min_time;
 }
 
-static bool empty_queue(SchedulerAlgorithmName schedulerAlgorithm)
+static bool empty_queue(SchedulerAlgorithmName schedulerAlgorithm, unsigned int submission_weight)
 {
     JobRequestPosition jobPosition = get_first_job_request();
     if (!jobPosition.isValid()) {
@@ -990,7 +990,7 @@ static bool empty_queue(SchedulerAlgorithmName schedulerAlgorithm)
     Job* job = jobPosition.job;
 
     while (true) {
-        use_cs = pick_server(job, schedulerAlgorithm);
+        use_cs = pick_server(job, schedulerAlgorithm, submission_weight);
 
         if (use_cs) {
             break;
@@ -1956,6 +1956,7 @@ static void usage(const std::string reason = "")
          << "  -v[v[v]]]\n"
          << "  -r, --persistent-client-connection\n"
          << "  -a, --algorithm <name>\n"
+         << "  -S, --least-busy-count-submissions <N>\n"
          << endl;
 
     exit(1);
@@ -2029,6 +2030,7 @@ int main(int argc, char *argv[])
     gid_t user_gid;
     int warn_icecc_user_errno = 0;
     SchedulerAlgorithmName scheduler_algo = SchedulerAlgorithmName::FASTEST;
+    unsigned int submission_weight = 0;
 
     if (getuid() == 0) {
         struct passwd *pw = getpwnam("icecc");
@@ -2058,10 +2060,11 @@ int main(int argc, char *argv[])
             { "log-file", 1, nullptr, 'l'},
             { "user-uid", 1, nullptr, 'u'},
             { "algorithm", 1, nullptr, 'a' },
+            { "least-busy-count-submissions", 1, nullptr, 'S' },
             { nullptr, 0, nullptr, 0 }
         };
 
-        const int c = getopt_long(argc, argv, "n:i:p:hl:vdru:a:", long_options, &option_index);
+        const int c = getopt_long(argc, argv, "n:i:p:hl:vdru:a:S:", long_options, &option_index);
 
         if (c == -1) {
             break;    // eoo
@@ -2177,6 +2180,18 @@ int main(int argc, char *argv[])
 
             break;
 
+        case 'S':
+            if (optarg && *optarg) {
+                int val = atoi(optarg);
+                if (val < 0) {
+                    usage("Error: --least-busy-count-submissions requires a non-negative value");
+                }
+                submission_weight = val;
+            } else {
+                usage("Error: --least-busy-count-submissions requires an argument");
+            }
+            break;
+
         default:
             usage();
         }
@@ -2280,7 +2295,7 @@ int main(int argc, char *argv[])
     while (!exit_main_loop) {
         int timeout = prune_servers();
 
-        while (empty_queue(scheduler_algo)) {
+        while (empty_queue(scheduler_algo, submission_weight)) {
             continue;
         }
 

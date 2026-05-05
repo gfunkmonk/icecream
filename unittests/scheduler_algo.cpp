@@ -8,6 +8,7 @@
 #include <list>
 #include <string>
 #include <cassert>
+#include <vector>
 
 using namespace std;
 
@@ -227,6 +228,148 @@ static void test_zero_weight_full_cycle_threshold()
           "gap=20 should exceed threshold=10 with weight=0");
 }
 
+// Creates `count` Job objects submitted from `cs`. Each Job constructor calls
+// cs->submittedJobsIncrement(), and ~Job() calls submittedJobsDecrement(). The
+// caller is responsible for deleting the returned Job pointers when the test is
+// done (which drives the matching decrements).
+static vector<Job *> add_submitted_jobs(CompileServer *cs, int count)
+{
+    vector<Job *> jobs;
+    for (int i = 0; i < count; ++i) {
+        jobs.push_back(new Job(next_job_id++, cs));
+    }
+    return jobs;
+}
+
+/*
+ * Verifies that float-based load ranking differentiates servers that would
+ * tie under the old integer formula. Both A (1 job) and B (7 jobs) have
+ * ceil(jobs/maxJobs)==1, so the integer algorithm treats them identically.
+ * Float ranking gives A=0.125 and B=0.875, so A should be chosen.
+ */
+static void test_least_busy_float_ranking()
+{
+    next_job_id = 1;
+
+    CompileServer *a = make_server("node-a", 8);
+    CompileServer *b = make_server("node-b", 8);
+
+    add_remote_jobs(a, 1);
+    add_remote_jobs(b, 7);
+
+    list<CompileServer *> servers = {a, b};
+    CompileServer *result = pick_server_least_busy(servers);
+
+    check(result == a,
+          "least_busy_float_ranking",
+          "expected node-a (1/8 load) over node-b (7/8 load); got " + result->nodeName());
+
+    free_server(a);
+    free_server(b);
+}
+
+/*
+ * Verifies the two-argument form pick_server_least_busy(eligible, weight) where
+ * `weight` controls how heavily submitted-job counts factor into the load
+ * ranking. Four scenarios cover: weight=0 (submitted jobs ignored), weight>0
+ * penalising a busy submitter, submitted+compile jobs combined, and small
+ * submitted-job counts with no truncation.
+ */
+static void test_least_busy_submission_weight()
+{
+    // Scenario 1: N=0 ignores submitted jobs — both servers have equal load.
+    {
+        next_job_id = 1;
+
+        CompileServer *a = make_server("node-a", 8);
+        CompileServer *b = make_server("node-b", 8);
+
+        vector<Job *> submitted = add_submitted_jobs(a, 10);
+
+        list<CompileServer *> servers = {a, b};
+        CompileServer *result = pick_server_least_busy(servers, 0);
+
+        check(result == a || result == b,
+              "submission_weight_N0_ignores_submitted",
+              "expected a valid server; got null or unknown");
+
+        for (Job *j : submitted) { delete j; }
+        free_server(a);
+        free_server(b);
+    }
+
+    // Scenario 2: N>0 penalises the server with many submitted jobs.
+    // A: 0 compile + 8 submitted, weight=4 → effective load = 0 + 8/4.0 = 2.0
+    // B: 0 compile + 0 submitted            → effective load = 0.0
+    {
+        next_job_id = 1;
+
+        CompileServer *a = make_server("node-a", 8);
+        CompileServer *b = make_server("node-b", 8);
+
+        vector<Job *> submitted = add_submitted_jobs(a, 8);
+
+        list<CompileServer *> servers = {a, b};
+        CompileServer *result = pick_server_least_busy(servers, 4);
+
+        check(result == b,
+              "submission_weight_penalises_busy_submitter",
+              "expected node-b (0 submitted) over node-a (8 submitted); got " + result->nodeName());
+
+        for (Job *j : submitted) { delete j; }
+        free_server(a);
+        free_server(b);
+    }
+
+    // Scenario 3: Submitted jobs combine with compile jobs.
+    // A: 2 compile + 4 submitted, weight=4 → effective = 2 + 4/4.0 = 3.0, load = 3.0/8 = 0.375
+    // B: 4 compile + 0 submitted            → effective = 4.0,            load = 4.0/8 = 0.5
+    {
+        next_job_id = 1;
+
+        CompileServer *a = make_server("node-a", 8);
+        CompileServer *b = make_server("node-b", 8);
+
+        add_remote_jobs(a, 2);
+        add_remote_jobs(b, 4);
+        vector<Job *> submitted = add_submitted_jobs(a, 4);
+
+        list<CompileServer *> servers = {a, b};
+        CompileServer *result = pick_server_least_busy(servers, 4);
+
+        check(result == a,
+              "submission_weight_combines_with_compile",
+              "expected node-a (effective 3.0) over node-b (effective 4.0); got " + result->nodeName());
+
+        for (Job *j : submitted) { delete j; }
+        free_server(a);
+        free_server(b);
+    }
+
+    // Scenario 4: Small submitted-job count has a proportional (non-truncated) effect.
+    // A: 0 compile + 3 submitted, weight=4 → load = (0 + 3/4.0) / 8 = 0.09375
+    // B: 0 compile + 0 submitted            → load = 0.0
+    {
+        next_job_id = 1;
+
+        CompileServer *a = make_server("node-a", 8);
+        CompileServer *b = make_server("node-b", 8);
+
+        vector<Job *> submitted = add_submitted_jobs(a, 3);
+
+        list<CompileServer *> servers = {a, b};
+        CompileServer *result = pick_server_least_busy(servers, 4);
+
+        check(result == b,
+              "submission_weight_no_truncation",
+              "expected node-b (load 0.0) over node-a (load 0.09375); got " + result->nodeName());
+
+        for (Job *j : submitted) { delete j; }
+        free_server(a);
+        free_server(b);
+    }
+}
+
 int main()
 {
     test_prefers_idle_over_busy();
@@ -239,6 +382,8 @@ int main()
     test_max_weight_never_refreshes();
     test_max_weight_overrides_never_picked();
     test_zero_weight_full_cycle_threshold();
+    test_least_busy_float_ranking();
+    test_least_busy_submission_weight();
 
     if (failures > 0) {
         cerr << failures << " test(s) FAILED" << endl;
