@@ -36,7 +36,7 @@ CompileServer *pick_server_round_robin(list<CompileServer *> &eligible)
 
 CompileServer *pick_server_least_busy(list<CompileServer *> &eligible)
 {
-    unsigned long min_load = 0;
+    unsigned long min_load = ULONG_MAX;
     list<CompileServer *> selected_list;
 
     // We want to pick the server with the fewest run jobs, but in a round-robin
@@ -63,12 +63,21 @@ CompileServer *pick_server_least_busy(list<CompileServer *> &eligible)
         }
     }
 
+    if (min_load == ULONG_MAX) {
+        min_load = 0;
+    }
+
     std::copy_if(
         eligible.begin(),
         eligible.end(),
         std::back_inserter(selected_list),
         [=](CompileServer* cs) {
-            return cs->maxJobs() && size_t(cs->currentJobCount()) / cs->maxJobs() == min_load;
+            if (!cs->maxJobs())
+                return false;
+            unsigned long cs_load = 0;
+            if (cs->currentJobCount())
+                cs_load = 1 + ((cs->currentJobCount() - 1) / cs->maxJobs());
+            return cs_load == min_load;
         });
 
 #if DEBUG_SCHEDULER > 1
