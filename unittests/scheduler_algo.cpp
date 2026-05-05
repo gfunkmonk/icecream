@@ -175,12 +175,70 @@ static void test_equal_load_ratio_tiebreak()
     free_server(b);
 }
 
+// gap=50, weight_factor=(255-120)/255≈0.529, threshold≈5.3. 50 > 5.3 → true.
+// The integer truncation bug computes weight_factor as (255-120)/255=0 and
+// returns false for any weight in 1-254.
+static void test_stale_host_is_refreshed()
+{
+    check(should_refresh_stats(100, 50, 10, 120) == true,
+          "stale_host_is_refreshed",
+          "gap=50 should exceed threshold ~5.3 with weight=120 and 10 eligible");
+}
+
+// last_picked_id=0 means the server has never been picked; it should always
+// be a candidate for a stats refresh so the scheduler has fresh data.
+static void test_never_picked_is_refreshed()
+{
+    check(should_refresh_stats(100, 0, 10, 120) == true,
+          "never_picked_is_refreshed",
+          "last_picked_id=0 should always refresh");
+}
+
+// gap=2, threshold≈5.3 with weight=120 and 10 eligible. 2 < 5.3 → false.
+static void test_recently_picked_not_refreshed()
+{
+    check(should_refresh_stats(100, 98, 10, 120) == false,
+          "recently_picked_not_refreshed",
+          "gap=2 should not exceed threshold ~5.3");
+}
+
+// weight=255 means maximum reliability; stats refresh should be disabled.
+static void test_max_weight_never_refreshes()
+{
+    check(should_refresh_stats(100, 1, 10, 255) == false,
+          "max_weight_never_refreshes",
+          "weight=255 should disable stats refresh");
+}
+
+// Maximum weight takes priority over last_picked_id=0.
+static void test_max_weight_overrides_never_picked()
+{
+    check(should_refresh_stats(100, 0, 10, 255) == false,
+          "max_weight_overrides_never_picked",
+          "weight=255 should disable refresh even for never-picked server");
+}
+
+// weight=0, weight_factor=1.0, threshold=10. gap=20 > 10 → true.
+// This exercises the boundary where integer truncation does not occur.
+static void test_zero_weight_full_cycle_threshold()
+{
+    check(should_refresh_stats(100, 80, 10, 0) == true,
+          "zero_weight_full_cycle_threshold",
+          "gap=20 should exceed threshold=10 with weight=0");
+}
+
 int main()
 {
     test_prefers_idle_over_busy();
     test_prefers_idle_over_locally_busy();
     test_all_idle();
     test_equal_load_ratio_tiebreak();
+    test_stale_host_is_refreshed();
+    test_never_picked_is_refreshed();
+    test_recently_picked_not_refreshed();
+    test_max_weight_never_refreshes();
+    test_max_weight_overrides_never_picked();
+    test_zero_weight_full_cycle_threshold();
 
     if (failures > 0) {
         cerr << failures << " test(s) FAILED" << endl;
