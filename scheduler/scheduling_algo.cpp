@@ -14,11 +14,19 @@ using namespace std;
 bool should_refresh_stats(unsigned int job_id, unsigned int last_picked_id,
                           size_t eligible_count, uint8_t stats_update_weight)
 {
-    uint8_t weight_limit = std::numeric_limits<uint8_t>::max() - stats_update_weight;
-    uint8_t weight_factor = weight_limit / std::numeric_limits<uint8_t>::max();
+    // Periodically refresh stats on underused hosts: a host that hasn't been
+    // picked in a while should get a fresh stats probe so the scheduler doesn't
+    // permanently overlook it. The weight ratio scales the job-ID gap threshold —
+    // higher weight means a larger gap is required before a refresh is triggered,
+    // and max weight (255) disables refresh entirely.
+    if (stats_update_weight == std::numeric_limits<uint8_t>::max())
+        return false;
 
-    return weight_factor > 0 && (!last_picked_id ||
-        ((job_id - last_picked_id) > (weight_factor * eligible_count)));
+    if (!last_picked_id)
+        return true;
+
+    float weight_factor = (255.0f - stats_update_weight) / 255.0f;
+    return (job_id - last_picked_id) > weight_factor * eligible_count;
 }
 
 CompileServer *pick_server_round_robin(list<CompileServer *> &eligible)
