@@ -59,6 +59,7 @@
 #include "compileserver.h"
 #include "job.h"
 #include "scheduler.h"
+#include "scheduling_algo.h"
 
 /* TODO:
    * leak check
@@ -675,76 +676,6 @@ static CompileServer *pick_server_random(list<CompileServer *> &eligible)
     return *iter;
 }
 
-static CompileServer *pick_server_round_robin(list<CompileServer *> &eligible)
-{
-    unsigned int oldest_job = 0;
-    CompileServer *selected = nullptr;
-
-    // The scheduler assigns each job a unique ID from a monotonically increasing
-    // integer sequence starting from 1. When a job is assigned to a compile
-    // server, the scheduler records the assigned job ID, which is then available
-    // from lastPickedId().
-    for (CompileServer * const cs: eligible) {
-#if DEBUG_SCHEDULER > 1
-        trace()
-            << "considering server " << cs->nodeName() << " with last job ID "
-            << cs->lastPickedId() << " and oldest known job ID " << oldest_job
-            << endl;
-#endif
-        if (!selected || cs->lastPickedId() < oldest_job) {
-            selected = cs;
-            oldest_job = cs->lastPickedId();
-        }
-    }
-    return selected;
-}
-
-static CompileServer *pick_server_least_busy(list<CompileServer *> &eligible)
-{
-    unsigned long min_load = 0;
-    list<CompileServer *> selected_list;
-
-    // We want to pick the server with the fewest run jobs, but in a round-robin
-    // fashion if multiple happen to be the least-busy so we can distribute the
-    // load out better.
-    for (CompileServer * const cs: eligible) {
-#if DEBUG_SCHEDULER > 1
-        trace()
-            << "considering server " << cs->nodeName() << " with "
-            << cs->currentJobCount() << " of " << cs->maxJobs() << " maximum jobs"
-            << endl;
-#endif
-        if (cs->maxJobs()) {
-            unsigned long cs_load = 0;
-
-            // Calculate the ceiling of the current job load ratio
-            if (cs->currentJobCount()) {
-                cs_load = 1 + ((cs->currentJobCount() - 1) / cs->maxJobs());
-            }
-
-            if (cs_load < min_load) {
-                min_load = cs_load;
-            }
-        }
-    }
-
-    std::copy_if(
-        eligible.begin(),
-        eligible.end(),
-        std::back_inserter(selected_list),
-        [=](CompileServer* cs) {
-            return cs->maxJobs() && size_t(cs->currentJobCount()) / cs->maxJobs() == min_load;
-        });
-
-
-#if DEBUG_SCHEDULER > 1
-    trace()
-        << "servers to consider further: " << selected_list.size()
-        << ", using ROUND_ROBIN for final selection" << endl;
-#endif
-    return pick_server_round_robin(selected_list);
-}
-
 static CompileServer *pick_server_new(Job *job, list<CompileServer *> &eligible)
 {
     CompileServer *selected = nullptr;
@@ -801,18 +732,7 @@ static CompileServer *pick_server_fastest(Job *job, list<CompileServer *> &eligi
                 " client count: " << cs->clientCount() << endl;
 #endif
 
-        // Some portion of the selection will go to a host that has not been selected
-        // in a while so we can maintain reasonably up-to-date statistics. The greater
-        // the weight, the less likely this is to happen.
-        uint8_t weight_limit = std::numeric_limits<uint8_t>::max() - STATS_UPDATE_WEIGHT;
-        uint8_t weight_factor = weight_limit / std::numeric_limits<uint8_t>::max();
-
-        // Job IDs are assigned from a monotonically increasing sequence by the
-        // scheduler, and each compile server records the ID of the last job it
-        // ran. We use that here to determine whether a job should simply run on
-        // the "next" host that hasn't seen a job for a long time.
-        if (weight_factor > 0 && (!cs->lastPickedId() ||
-            ((job->id() - cs->lastPickedId()) > (weight_factor * eligible.size())))) {
+        if (should_refresh_stats(job->id(), cs->lastPickedId(), eligible.size(), STATS_UPDATE_WEIGHT)) {
             best = cs;
             break;
         }
@@ -872,7 +792,7 @@ static CompileServer *pick_server_fastest(Job *job, list<CompileServer *> &eligi
     return bestpre;
 }
 
-static CompileServer *pick_server(Job *job, SchedulerAlgorithmName schedulerAlgorithm)
+static CompileServer *pick_server(Job *job, SchedulerAlgorithmName schedulerAlgorithm, unsigned int submission_weight)
 {
 #if DEBUG_SCHEDULER > 0
     /* consistency checking for now */
@@ -951,7 +871,7 @@ static CompileServer *pick_server(Job *job, SchedulerAlgorithmName schedulerAlgo
             selected = pick_server_round_robin(eligible);
             break;
         case SchedulerAlgorithmName::LEAST_BUSY:
-            selected = pick_server_least_busy(eligible);
+            selected = pick_server_least_busy(eligible, submission_weight);
             break;
         case SchedulerAlgorithmName::FASTEST:
             selected = pick_server_fastest(job, eligible);
@@ -1056,7 +976,7 @@ static time_t prune_servers()
     return min_time;
 }
 
-static bool empty_queue(SchedulerAlgorithmName schedulerAlgorithm)
+static bool empty_queue(SchedulerAlgorithmName schedulerAlgorithm, unsigned int submission_weight)
 {
     JobRequestPosition jobPosition = get_first_job_request();
     if (!jobPosition.isValid()) {
@@ -1069,7 +989,7 @@ static bool empty_queue(SchedulerAlgorithmName schedulerAlgorithm)
     Job* job = jobPosition.job;
 
     while (true) {
-        use_cs = pick_server(job, schedulerAlgorithm);
+        use_cs = pick_server(job, schedulerAlgorithm, submission_weight);
 
         if (use_cs) {
             break;
@@ -2035,6 +1955,7 @@ static void usage(const std::string reason = "")
          << "  -v[v[v]]]\n"
          << "  -r, --persistent-client-connection\n"
          << "  -a, --algorithm <name>\n"
+         << "  -S, --least-busy-count-submissions <N>\n"
          << endl;
 
     exit(1);
@@ -2108,6 +2029,7 @@ int main(int argc, char *argv[])
     gid_t user_gid;
     int warn_icecc_user_errno = 0;
     SchedulerAlgorithmName scheduler_algo = SchedulerAlgorithmName::FASTEST;
+    unsigned int submission_weight = 0;
 
     if (getuid() == 0) {
         struct passwd *pw = getpwnam("icecc");
@@ -2137,10 +2059,11 @@ int main(int argc, char *argv[])
             { "log-file", 1, nullptr, 'l'},
             { "user-uid", 1, nullptr, 'u'},
             { "algorithm", 1, nullptr, 'a' },
+            { "least-busy-count-submissions", 1, nullptr, 'S' },
             { nullptr, 0, nullptr, 0 }
         };
 
-        const int c = getopt_long(argc, argv, "n:i:p:hl:vdru:a:", long_options, &option_index);
+        const int c = getopt_long(argc, argv, "n:i:p:hl:vdru:a:S:", long_options, &option_index);
 
         if (c == -1) {
             break;    // eoo
@@ -2256,6 +2179,18 @@ int main(int argc, char *argv[])
 
             break;
 
+        case 'S':
+            if (optarg && *optarg) {
+                int val = atoi(optarg);
+                if (val < 0) {
+                    usage("Error: --least-busy-count-submissions requires a non-negative value");
+                }
+                submission_weight = val;
+            } else {
+                usage("Error: --least-busy-count-submissions requires an argument");
+            }
+            break;
+
         default:
             usage();
         }
@@ -2359,7 +2294,7 @@ int main(int argc, char *argv[])
     while (!exit_main_loop) {
         int timeout = prune_servers();
 
-        while (empty_queue(scheduler_algo)) {
+        while (empty_queue(scheduler_algo, submission_weight)) {
             continue;
         }
 
